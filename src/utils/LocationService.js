@@ -127,15 +127,52 @@ export const LocationService = {
             const name = countries.length === 1
                 ? `${countries[0]} Trip`
                 : `${countries[0]} & More`;
+
+            // Aggregate expenses
+            const totalCost = group.reduce((sum, c) => sum + (parseFloat(c.cost) || 0), 0);
+            const packingAdvice = LocationService.getPackingAdvice(group);
+
             return {
                 id: Math.random().toString(36).substr(2, 9),
                 name,
                 startDate: group[0].date,
                 endDate: group[group.length - 1].date,
                 cities: group,
-                countries
+                countries,
+                totalCost,
+                packingAdvice
             };
         }).reverse(); // Latest trips first
+    },
+
+    getPackingAdvice: (tripCities) => {
+        const advice = new Set(['Passport', 'Universal Adapter', 'Comfortable Shoes']);
+
+        tripCities.forEach(city => {
+            if (city.weather) {
+                if (city.weather.temp > 25) {
+                    advice.add('Sunscreen');
+                    advice.add('Light clothing');
+                    advice.add('Sunglasses');
+                }
+                if (city.weather.temp < 10) {
+                    advice.add('Heavy Jacket');
+                    advice.add('Gloves');
+                    advice.add('Scarf');
+                }
+                // Rain codes (WMO Weather interpretation codes)
+                if ([51, 53, 55, 61, 63, 65, 80, 81, 82].includes(city.weather.code)) {
+                    advice.add('Umbrella');
+                    advice.add('Raincoat');
+                }
+            }
+
+            // Country/Region specific
+            if (['Saudi Arabia', 'Iran', 'UAE', 'Oman', 'Qatar'].includes(city.country)) advice.add('Modest clothing');
+            if (['Japan', 'Singapore', 'Switzerland', 'Norway', 'Iceland'].includes(city.country)) advice.add('Higher Budget');
+        });
+
+        return Array.from(advice);
     },
 
     getCurvePoints: (coords1, coords2) => {
@@ -194,6 +231,7 @@ export const LocationService = {
             notes: city.notes || '',
             date: city.date || new Date().toISOString().split('T')[0],
             photo: city.photo || null,
+            cost: city.cost || 0,
             customEmoji: city.customEmoji || null,
             weather: city.weather || null
         };
@@ -237,6 +275,9 @@ export const LocationService = {
     },
 
     updateCity: (cityId, updates, currentData) => {
+        // Ensure cost is a number
+        if (updates.cost !== undefined) updates.cost = parseFloat(updates.cost) || 0;
+
         let visitedCities = currentData.visitedCities.map(c => c.id === cityId ? { ...c, ...updates } : c);
         if (updates.date) {
             visitedCities = visitedCities.sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -388,5 +429,52 @@ export const LocationService = {
         };
         LocationService.saveData(newData);
         return newData;
+    },
+
+    calculateWrappedStats: (data, year) => {
+        const yearCities = data.visitedCities.filter(c => new Date(c.date).getFullYear() === year);
+        if (yearCities.length === 0) return null;
+
+        const countries = [...new Set(yearCities.map(c => c.country))];
+        const continents = [...new Set(yearCities.map(c => {
+            for (const cont in CONTINENTS) {
+                if (CONTINENTS[cont].includes(c.country)) return cont;
+            }
+            return 'Other';
+        }))];
+
+        // Calc distance for this year
+        let yearDistance = 0;
+        for (let i = 0; i < yearCities.length - 1; i++) {
+            yearDistance += LocationService.haversineDistance(
+                yearCities[i].lat, yearCities[i].lng,
+                yearCities[i + 1].lat, yearCities[i + 1].lng
+            );
+        }
+
+        // Persona Logic
+        const noteText = yearCities.map(c => c.notes).join(' ').toLowerCase();
+        let persona = "The Sightseer";
+        if (noteText.includes('food') || noteText.includes('dinner') || noteText.includes('eat')) persona = "The Global Foodie";
+        else if (noteText.includes('hike') || noteText.includes('mountain') || noteText.includes('beach')) persona = "The Nature Seeker";
+        else if (noteText.includes('museum') || noteText.includes('history') || noteText.includes('art')) persona = "The Culture Seeker";
+        else if (yearDistance > 5000) persona = "The Grand Voyager";
+
+        // Peak Month
+        const months = yearCities.map(c => new Date(c.date).getMonth());
+        const monthCounts = months.reduce((acc, m) => { acc[m] = (acc[m] || 0) + 1; return acc; }, {});
+        const peakMonthIdx = Object.keys(monthCounts).reduce((a, b) => monthCounts[a] > monthCounts[b] ? a : b);
+        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+        return {
+            year,
+            cityCount: yearCities.length,
+            countryCount: countries.length,
+            continentCount: continents.length,
+            distance: Math.round(yearDistance),
+            persona,
+            peakMonth: monthNames[peakMonthIdx],
+            topCity: yearCities[yearCities.length - 1].name
+        };
     }
 };

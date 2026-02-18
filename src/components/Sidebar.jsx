@@ -4,7 +4,7 @@ import {
     Award, BookOpen, Compass, ChevronRight,
     Calendar, CheckCircle2, Save, X, Info,
     Camera, Image as ImageIcon, Download, Upload,
-    Settings as SettingsIcon, Share2
+    Settings as SettingsIcon, Share2, Zap
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import html2canvas from 'html2canvas';
@@ -31,13 +31,13 @@ const StampImage = ({ stamp }) => {
     return <img src={src} className="w-full h-full object-cover transition-transform group-hover:scale-110" alt="Passport Stamp" />;
 };
 
-const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCity, onRemoveCity, onRemoveBucketCity, onToggleCountry, onToggleBucketList, onImport, onUpdateSettings, onSelectCity, onAddPassportStamp, onRemovePassportStamp }) => {
+const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCity, onRemoveCity, onRemoveBucketCity, onToggleCountry, onToggleBucketList, onImport, onUpdateSettings, onSelectCity, onAddPassportStamp, onRemovePassportStamp, onShowWrapped }) => {
     const [activeTab, setActiveTab] = useState('stats');
     const [search, setSearch] = useState('');
     const [suggestions, setSuggestions] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
     const [editingId, setEditingId] = useState(null);
-    const [editValues, setEditValues] = useState({ notes: '', date: '', photo: '', customEmoji: '' });
+    const [editValues, setEditValues] = useState({ notes: '', date: '', photo: '', customEmoji: '', cost: 0 });
     const [filterYear, setFilterYear] = useState('all');
     const [displayMode, setDisplayMode] = useState('list'); // list, trips
 
@@ -97,7 +97,7 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
 
     const startEditing = (city) => {
         setEditingId(city.id);
-        setEditValues({ notes: city.notes, date: city.date, photo: city.photo || '', customEmoji: city.customEmoji || '' });
+        setEditValues({ notes: city.notes, date: city.date, photo: city.photo || '', customEmoji: city.customEmoji || '', cost: city.cost || 0 });
     };
 
     const saveEdit = (id) => {
@@ -270,9 +270,17 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                                 </section>
                             </div>
                         </div>
-                        <button onClick={exportStats} className="w-full glass py-4 font-bold text-[10px] uppercase tracking-widest text-blue-400 hover:text-white transition-all flex items-center justify-center gap-2 rounded-2xl group">
-                            <Share2 className="w-4 h-4 group-hover:scale-110" /> Export Stats Card
-                        </button>
+                        <div className="grid grid-cols-2 gap-4">
+                            <button
+                                onClick={() => onShowWrapped(new Date().getFullYear())}
+                                className="glass py-4 font-bold text-[10px] uppercase tracking-widest text-amber-500 hover:text-white transition-all flex items-center justify-center gap-2 rounded-2xl group border-amber-500/10 hover:border-amber-500/50"
+                            >
+                                <Zap className="w-4 h-4 group-hover:scale-110" /> Reveal {new Date().getFullYear()} Wrapped
+                            </button>
+                            <button onClick={exportStats} className="glass py-4 font-bold text-[10px] uppercase tracking-widest text-blue-400 hover:text-white transition-all flex items-center justify-center gap-2 rounded-2xl group border-blue-500/10 hover:border-blue-500/50">
+                                <Share2 className="w-4 h-4 group-hover:scale-110" /> Export Stats Card
+                            </button>
+                        </div>
                     </div>
                 )}
 
@@ -326,9 +334,10 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
 
                                                 {editingId === city.id ? (
                                                     <div className="mt-4 space-y-3 animate-fade-in">
-                                                        <div className="grid grid-cols-2 gap-2">
-                                                            <input type="date" value={editValues.date} onChange={(e) => setEditValues({ ...editValues, date: e.target.value })} className="bg-slate-800/50 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none" />
-                                                            <input type="text" placeholder="Photo URL" value={editValues.photo} onChange={(e) => setEditValues({ ...editValues, photo: e.target.value })} className="bg-slate-800/50 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none" />
+                                                        <div className="grid grid-cols-3 gap-2">
+                                                            <input type="date" value={editValues.date} onChange={(e) => setEditValues({ ...editValues, date: e.target.value })} className="bg-slate-800/50 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none col-span-1" />
+                                                            <input type="text" placeholder="Photo URL" value={editValues.photo} onChange={(e) => setEditValues({ ...editValues, photo: e.target.value })} className="bg-slate-800/50 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none col-span-1" />
+                                                            <input type="number" placeholder="Cost" value={editValues.cost} onChange={(e) => setEditValues({ ...editValues, cost: e.target.value })} className="bg-slate-800/50 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none col-span-1" />
                                                         </div>
                                                         <textarea value={editValues.notes} onChange={(e) => setEditValues({ ...editValues, notes: e.target.value })} className="w-full bg-slate-800/50 rounded-xl p-3 text-xs text-slate-300 focus:outline-none min-h-[80px]" />
                                                         <div className="flex gap-2">
@@ -353,10 +362,11 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                                     {(stats.trips || []).map((trip) => (
                                         <div key={trip.id} className="relative pl-6 border-l-2 border-white/5 space-y-4">
                                             <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-slate-900 border-2 border-blue-500" />
-                                            <div>
+                                            <div className="flex justify-between items-center mb-1">
                                                 <h3 className="text-sm font-black text-slate-200">{trip.name}</h3>
-                                                <p className="text-[10px] text-slate-500 font-bold uppercase">{new Date(trip.startDate).toLocaleDateString()} — {new Date(trip.endDate).toLocaleDateString()}</p>
+                                                <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest">${trip.totalCost?.toLocaleString()}</span>
                                             </div>
+                                            <p className="text-[10px] text-slate-500 font-bold uppercase">{new Date(trip.startDate).toLocaleDateString()} — {new Date(trip.endDate).toLocaleDateString()}</p>
                                             <div className="grid grid-cols-1 gap-2">
                                                 {trip.cities.map(city => (
                                                     <div key={city.id} className="glass p-3 rounded-xl border-white/5 flex items-center gap-3">
@@ -374,6 +384,31 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                                                     This {trip.cities.length > 2 ? 'multi-city' : 'quick'} adventure through {trip.countries.length} {trip.countries.length === 1 ? 'country' : 'countries'} covers a diverse range of local cultures. Tip: Check the local weather patterns before your next leg!
                                                 </p>
                                             </div>
+
+                                            {trip.packingAdvice && trip.packingAdvice.length > 0 && (
+                                                <div className="bg-purple-500/5 rounded-2xl p-4 border border-purple-500/10 mt-2">
+                                                    <div className="flex items-center justify-between mb-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <Compass className="w-3.5 h-3.5 text-purple-400" />
+                                                            <p className="text-[10px] font-black text-purple-400 uppercase tracking-widest">Smart Packing List</p>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => {
+                                                                navigator.clipboard.writeText(trip.packingAdvice.join(', '));
+                                                                alert("Packing list copied to clipboard!");
+                                                            }}
+                                                            className="text-[8px] font-black text-slate-500 hover:text-white uppercase transition-colors"
+                                                        >
+                                                            Copy
+                                                        </button>
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {trip.packingAdvice.map(item => (
+                                                            <span key={item} className="px-2 py-1 bg-white/5 rounded-lg text-[9px] text-slate-400 font-bold border border-white/5 shadow-sm">{item}</span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>

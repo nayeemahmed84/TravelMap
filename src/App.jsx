@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Map from './components/Map';
 import Sidebar from './components/Sidebar';
+import WrappedModal from './components/WrappedModal';
+import Timeline from './components/Timeline';
 import { LocationService } from './utils/LocationService';
 import ImageService from './utils/ImageService';
 import './index.css';
@@ -10,6 +12,9 @@ function App() {
   const [stats, setStats] = useState({ visitedCount: 0, totalCount: 195, percentage: 0, achievements: [], continentStats: [] });
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCity, setSelectedCity] = useState(null);
+  const [showWrapped, setShowWrapped] = useState(false);
+  const [wrappedStats, setWrappedStats] = useState(null);
+  const [timelineDate, setTimelineDate] = useState(new Date().toISOString().split('T')[0]);
 
   useEffect(() => {
     const savedData = LocationService.loadData();
@@ -109,6 +114,16 @@ function App() {
     setData(newData);
   };
 
+  const handleShowWrapped = (year) => {
+    const recapStats = LocationService.calculateWrappedStats(data, year);
+    if (recapStats) {
+      setWrappedStats(recapStats);
+      setShowWrapped(true);
+    } else {
+      alert(`No travel memories found for ${year} yet!`);
+    }
+  };
+
   if (isLoading) return null;
 
   return (
@@ -129,6 +144,12 @@ function App() {
         onSelectCity={handleSelectCity}
         onAddPassportStamp={handleAddPassportStamp}
         onRemovePassportStamp={handleRemovePassportStamp}
+        onShowWrapped={handleShowWrapped}
+      />
+      <Timeline
+        cities={data.visitedCities}
+        currentDate={timelineDate}
+        onChange={setTimelineDate}
       />
       <Map
         visitedCities={data.visitedCities}
@@ -137,9 +158,17 @@ function App() {
         bucketListCountries={data.bucketListCountries}
         settings={data.settings}
         selectedCity={selectedCity}
+        timelineDate={timelineDate}
         onToggleCountry={handleToggleCountry}
         onToggleBucketList={handleToggleBucketList}
       />
+      {showWrapped && (
+        <WrappedModal
+          stats={wrappedStats}
+          isOpen={showWrapped}
+          onClose={() => setShowWrapped(false)}
+        />
+      )}
     </div>
   );
 }

@@ -26,6 +26,26 @@ const TILE_URLS = {
     terrain: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'
 };
 
+const TimelineFlyTo = ({ activeCities, timelineDate }) => {
+    const map = useMap();
+    const lastTimelineDate = React.useRef(timelineDate);
+
+    useEffect(() => {
+        if (activeCities.length > 0 && timelineDate !== lastTimelineDate.current) {
+            // Find the "newest" city on the timeline
+            const newest = [...activeCities].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+            if (newest) {
+                map.flyTo([newest.lat, newest.lng], map.getZoom(), {
+                    animate: true,
+                    duration: 0.5 // Faster for timeline scrubbing
+                });
+            }
+            lastTimelineDate.current = timelineDate;
+        }
+    }, [timelineDate, activeCities, map]);
+    return null;
+};
+
 const FlyToListener = ({ city }) => {
     const map = useMap();
     useEffect(() => {
@@ -39,7 +59,7 @@ const FlyToListener = ({ city }) => {
     return null;
 };
 
-const Map = ({ visitedCities, bucketListCities, visitedCountries, bucketListCountries, settings, selectedCity, onToggleCountry, onToggleBucketList }) => {
+const Map = ({ visitedCities, bucketListCities, visitedCountries, bucketListCountries, settings, selectedCity, onToggleCountry, onToggleBucketList, timelineDate }) => {
     const [geoData, setGeoData] = useState(null);
 
     useEffect(() => {
@@ -48,6 +68,9 @@ const Map = ({ visitedCities, bucketListCities, visitedCountries, bucketListCoun
             .then(data => setGeoData(data))
             .catch(err => console.error('Error loading GeoJSON:', err));
     }, []);
+
+    // Filter cities based on timeline
+    const activeCities = visitedCities.filter(c => c.date <= (timelineDate || new Date().toISOString()));
 
     // Custom emoji icon
     const getEmojiIcon = (cityEmoji) => L.divIcon({
@@ -73,7 +96,7 @@ const Map = ({ visitedCities, bucketListCities, visitedCountries, bucketListCoun
         : (settings?.mapStyle || 'dark');
 
     // Sort cities by date for the path
-    const sortedCities = [...visitedCities].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const sortedCities = [...activeCities].sort((a, b) => new Date(a.date) - new Date(b.date));
 
     // Generate curved path segments
     const curvedPaths = [];
@@ -157,6 +180,7 @@ const Map = ({ visitedCities, bucketListCities, visitedCountries, bucketListCoun
                 <TileLayer
                     url={TILE_URLS[effectiveStyle]}
                 />
+                <TimelineFlyTo activeCities={activeCities} timelineDate={timelineDate} />
                 <FlyToListener city={selectedCity} />
 
                 {geoData && (
@@ -180,7 +204,7 @@ const Map = ({ visitedCities, bucketListCities, visitedCountries, bucketListCoun
                     />
                 ))}
 
-                {visitedCities.map((city) => (
+                {activeCities.map((city) => (
                     settings?.showHeatmap ? (
                         <CircleMarker
                             key={`heat-${city.id}`}
@@ -240,7 +264,7 @@ const Map = ({ visitedCities, bucketListCities, visitedCountries, bucketListCoun
             </MapContainer>
 
             {/* Legend */}
-            <div className="absolute bottom-6 right-6 glass p-4 rounded-2xl pointer-events-none z-[1000] text-[10px] uppercase tracking-wider font-bold space-y-3">
+            <div className="absolute top-6 right-6 glass p-4 rounded-2xl pointer-events-none z-[1000] text-[10px] uppercase tracking-wider font-bold space-y-3">
                 <div className="flex items-center gap-3">
                     <div className="w-4 h-4 bg-amber-400 opacity-60 rounded-md ring-2 ring-amber-400/20"></div>
                     <span className="text-slate-200">Visited</span>

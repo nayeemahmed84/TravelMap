@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Map from './components/Map';
 import Sidebar from './components/Sidebar';
 import { LocationService } from './utils/LocationService';
+import ImageService from './utils/ImageService';
 import './index.css';
 
 function App() {
@@ -83,12 +84,27 @@ function App() {
     setData(newData);
   };
 
-  const handleAddPassportStamp = (url) => {
-    const newData = LocationService.addPassportStamp(url, data);
+  const handleAddPassportStamp = async (source) => {
+    let stampMetadata;
+
+    if (source instanceof File) {
+      const id = `local_${Date.now()}`;
+      await ImageService.saveImage(id, source);
+      stampMetadata = { localId: id };
+    } else {
+      stampMetadata = { url: source };
+    }
+
+    const newData = LocationService.addPassportStamp(stampMetadata, data);
     setData(newData);
   };
 
-  const handleRemovePassportStamp = (id) => {
+  const handleRemovePassportStamp = async (id) => {
+    const stamp = data.passportStamps.find(s => s.id === id);
+    if (stamp?.localId) {
+      await ImageService.deleteImage(stamp.localId);
+    }
+
     const newData = LocationService.removePassportStamp(id, data);
     setData(newData);
   };

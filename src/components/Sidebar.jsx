@@ -8,6 +8,28 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import html2canvas from 'html2canvas';
+import ImageService from '../utils/ImageService';
+
+const StampImage = ({ stamp }) => {
+    const [src, setSrc] = React.useState(stamp.url);
+
+    React.useEffect(() => {
+        let url;
+        if (stamp.localId) {
+            ImageService.getImage(stamp.localId).then(blob => {
+                if (blob) {
+                    url = URL.createObjectURL(blob);
+                    setSrc(url);
+                }
+            });
+        }
+        return () => {
+            if (url) URL.revokeObjectURL(url);
+        };
+    }, [stamp.localId, stamp.url]);
+
+    return <img src={src} className="w-full h-full object-cover transition-transform group-hover:scale-110" alt="Passport Stamp" />;
+};
 
 const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCity, onRemoveCity, onRemoveBucketCity, onToggleCountry, onToggleBucketList, onImport, onUpdateSettings, onSelectCity, onAddPassportStamp, onRemovePassportStamp }) => {
     const [activeTab, setActiveTab] = useState('stats');
@@ -368,16 +390,22 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                             <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest leading-relaxed">Personal vault for your <br /> passport memories.</p>
                         </div>
                         <div className="grid grid-cols-2 gap-4">
-                            <button
-                                onClick={() => { const url = prompt("Stamp Image URL:"); if (url) onAddPassportStamp(url); }}
-                                className="aspect-square glass rounded-3xl border-dashed border-white/10 flex flex-col items-center justify-center gap-3 hover:border-blue-500/50 transition-all group"
-                            >
+                            <label className="aspect-square glass rounded-3xl border-dashed border-white/10 flex flex-col items-center justify-center gap-3 hover:border-blue-500/50 transition-all group cursor-pointer">
                                 <Upload className="w-6 h-6 text-slate-500 group-hover:text-blue-400" />
                                 <span className="text-[10px] font-black text-slate-600 uppercase">Upload</span>
-                            </button>
+                                <input
+                                    type="file"
+                                    className="hidden"
+                                    accept="image/*"
+                                    onChange={(e) => {
+                                        const file = e.target.files[0];
+                                        if (file) onAddPassportStamp(file);
+                                    }}
+                                />
+                            </label>
                             {(data.passportStamps || []).map(stamp => (
                                 <div key={stamp.id} className="relative aspect-square rounded-3xl overflow-hidden group shadow-2xl">
-                                    <img src={stamp.url} className="w-full h-full object-cover transition-transform group-hover:scale-110" />
+                                    <StampImage stamp={stamp} />
                                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                         <button onClick={() => onRemovePassportStamp(stamp.id)} className="p-3 bg-red-500/20 text-red-500 rounded-2xl hover:bg-red-500 hover:text-white transition-all"><Trash2 className="w-5 h-5" /></button>
                                     </div>

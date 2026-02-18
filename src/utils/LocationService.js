@@ -368,10 +368,14 @@ export const LocationService = {
         }
     },
 
-    addPassportStamp: (url, currentData) => {
+    addPassportStamp: (urlOrMetadata, currentData) => {
+        const stamp = typeof urlOrMetadata === 'string'
+            ? { id: Date.now(), url: urlOrMetadata, date: new Date().toISOString() }
+            : { id: Date.now(), ...urlOrMetadata, date: new Date().toISOString() };
+
         const newData = {
             ...currentData,
-            passportStamps: [...(currentData.passportStamps || []), { id: Date.now(), url, date: new Date().toISOString() }]
+            passportStamps: [...(currentData.passportStamps || []), stamp]
         };
         LocationService.saveData(newData);
         return newData;

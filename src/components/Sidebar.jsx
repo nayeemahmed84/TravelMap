@@ -381,8 +381,14 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                                             <div key={city.id} className="group glass p-4 rounded-3xl border-white/5 hover:border-white/10 transition-all">
                                                 <div className="flex justify-between items-start mb-2">
                                                     <div className="flex items-center gap-3">
-                                                        <div className="w-10 h-10 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0 overflow-hidden">
-                                                            {city.photo ? <img src={city.photo} className="w-full h-full object-cover" /> : <MapPin className="w-5 h-5 text-blue-400" />}
+                                                        <div className="w-10 h-10 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0 overflow-hidden border border-white/5 shadow-sm">
+                                                            {city.photo ? (
+                                                                <img src={city.photo} className="w-full h-full object-cover" />
+                                                            ) : CountryService.getFlagUrl(city.country) ? (
+                                                                <img src={CountryService.getFlagUrl(city.country)} className="w-full h-full object-cover opacity-80" />
+                                                            ) : (
+                                                                <MapPin className="w-5 h-5 text-blue-400" />
+                                                            )}
                                                         </div>
                                                         <div onClick={() => onSelectCity(city)} className="cursor-pointer">
                                                             <h4 className="text-sm font-black text-slate-200 flex items-center gap-2">

@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { MapContainer, TileLayer, GeoJSON, Marker, Popup, Polyline, useMap, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Calendar, Quote, Camera } from 'lucide-react';
 import { LocationService } from '../utils/LocationService';
 
 // Fix for default marker icon issues
@@ -26,31 +25,33 @@ const TILE_URLS = {
     terrain: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'
 };
 
-const TimelineFlyTo = ({ activeCities, timelineDate }) => {
+const TimelineFlyTo = React.memo(({ activeCities, timelineDate }) => {
     const map = useMap();
-    const lastTimelineDate = React.useRef(timelineDate);
+    const lastCityId = React.useRef(null);
 
     useEffect(() => {
-        if (activeCities.length > 0 && timelineDate !== lastTimelineDate.current) {
-            // Debounce flyTo for timeline scrubbing
-            const timeout = setTimeout(() => {
-                const newest = [...activeCities].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
-                if (newest) {
+        if (activeCities.length > 0) {
+            const newest = [...activeCities].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+
+            if (newest && newest.id !== lastCityId.current) {
+                const currentCenter = map.getCenter();
+                const dist = Math.sqrt(Math.pow(currentCenter.lat - newest.lat, 2) + Math.pow(currentCenter.lng - newest.lng, 2));
+
+                // Only fly if it's actually a new destination or far away
+                if (dist > 2) {
                     map.flyTo([newest.lat, newest.lng], map.getZoom(), {
                         animate: true,
-                        duration: 0.8
+                        duration: 0.5
                     });
                 }
-            }, 100);
-
-            lastTimelineDate.current = timelineDate;
-            return () => clearTimeout(timeout);
+                lastCityId.current = newest.id;
+            }
         }
-    }, [timelineDate, activeCities, map]);
+    }, [activeCities, map]);
     return null;
-};
+});
 
-const FlyToListener = ({ city }) => {
+const FlyToListener = React.memo(({ city }) => {
     const map = useMap();
     useEffect(() => {
         if (city) {
@@ -61,9 +62,19 @@ const FlyToListener = ({ city }) => {
         }
     }, [city, map]);
     return null;
-};
+});
 
-const Map = React.memo(({ visitedCities, bucketListCities, visitedCountries, bucketListCountries, settings, selectedCity, onToggleCountry, onToggleBucketList, timelineDate }) => {
+const Map = React.memo(({
+    visitedCities,
+    bucketListCities,
+    visitedCountries,
+    bucketListCountries,
+    settings,
+    selectedCity,
+    onToggleCountry,
+    onToggleBucketList,
+    timelineDate
+}) => {
     const [geoData, setGeoData] = useState(null);
 
     useEffect(() => {
@@ -73,145 +84,119 @@ const Map = React.memo(({ visitedCities, bucketListCities, visitedCountries, buc
             .catch(err => console.error('Error loading GeoJSON:', err));
     }, []);
 
-    // Filter cities based on timeline - MEMOIZED
-    const activeCities = React.useMemo(() =>
+    // 1. Pre-calculate ALL possible paths for the entire history
+    const allPaths = useMemo(() => {
+        const sortedAll = [...visitedCities].sort((a, b) => new Date(a.date) - new Date(b.date));
+        const paths = [];
+        for (let i = 0; i < sortedAll.length - 1; i++) {
+            paths.push({
+                positions: LocationService.getCurvePoints(
+                    [sortedAll[i].lat, sortedAll[i].lng],
+                    [sortedAll[i + 1].lat, sortedAll[i + 1].lng]
+                ),
+                toDate: sortedAll[i + 1].date,
+                id: `path-${sortedAll[i].id}-${sortedAll[i + 1].id}`
+            });
+        }
+        return paths;
+    }, [visitedCities]);
+
+    // 2. Filter cities and paths based on timeline - VERY FAST
+    const activeCities = useMemo(() =>
         visitedCities.filter(c => c.date <= (timelineDate || new Date().toISOString())),
         [visitedCities, timelineDate]);
 
-    // Custom emoji icon
-    const getEmojiIcon = (cityEmoji) => L.divIcon({
+    const activePaths = useMemo(() =>
+        allPaths.filter(p => p.toDate <= (timelineDate || new Date().toISOString())),
+        [allPaths, timelineDate]);
+
+    // Custom icons memoized
+    const getEmojiIcon = useCallback((cityEmoji) => L.divIcon({
         html: `<div style="font-size: 24px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); cursor: pointer;">${cityEmoji || settings?.globalEmoji || '📍'}</div>`,
         className: 'custom-emoji-icon',
         iconSize: [30, 30],
         iconAnchor: [15, 15]
-    });
+    }), [settings?.globalEmoji]);
 
-    // Bucket list icon (Purple/Semi-transparent)
-    const bucketIcon = L.divIcon({
+    const bucketIcon = useMemo(() => L.divIcon({
         html: `<div style="font-size: 20px; filter: opacity(0.6) drop-shadow(0 0 10px rgba(168, 85, 247, 0.4)); cursor: pointer;">✨</div>`,
         className: 'bucket-emoji-icon',
         iconSize: [30, 30],
         iconAnchor: [15, 15]
-    });
+    }), []);
 
-    // Day/Night logic
-    const currentHour = new Date().getHours();
-    const isNight = currentHour < 6 || currentHour > 18;
-    const effectiveStyle = settings?.autoDayNight
-        ? (isNight ? 'dark' : 'light')
-        : (settings?.mapStyle || 'dark');
+    // Day/Night and style
+    const efficientStyle = useMemo(() => {
+        const currentHour = new Date().getHours();
+        const isNight = currentHour < 6 || currentHour > 18;
+        return settings?.autoDayNight
+            ? (isNight ? 'dark' : 'light')
+            : (settings?.mapStyle || 'dark');
+    }, [settings?.autoDayNight, settings?.mapStyle]);
 
-    // Sort cities by date for the path - MEMOIZED
-    const sortedCities = React.useMemo(() =>
-        [...activeCities].sort((a, b) => new Date(a.date) - new Date(b.date)),
-        [activeCities]);
-
-    // Generate curved path segments - MEMOIZED
-    const curvedPaths = React.useMemo(() => {
-        const paths = [];
-        for (let i = 0; i < sortedCities.length - 1; i++) {
-            paths.push(LocationService.getCurvePoints(
-                [sortedCities[i].lat, sortedCities[i].lng],
-                [sortedCities[i + 1].lat, sortedCities[i + 1].lng]
-            ));
-        }
-        return paths;
-    }, [sortedCities]);
-
-    // ... countryStyle and onEachCountry (keep as is) ...
-
-    const countryStyle = (feature) => {
+    // Country styling memoized
+    const countryStyle = useCallback((feature) => {
         const isVisited = visitedCountries.includes(feature.properties.name);
         const isBucketList = bucketListCountries.includes(feature.properties.name);
 
-        if (isVisited) {
-            return {
-                fillColor: '#fbbf24', // Amber
-                weight: 1.5,
-                opacity: 0.6,
-                color: '#fbbf24',
-                fillOpacity: 0.4
-            };
-        }
+        if (isVisited) return { fillColor: '#fbbf24', weight: 1.5, opacity: 0.6, color: '#fbbf24', fillOpacity: 0.4 };
+        if (isBucketList) return { fillColor: '#c084fc', weight: 1, opacity: 0.4, color: '#c084fc', fillOpacity: 0.2, dashArray: '3' };
+        return { fillColor: 'transparent', weight: 1, opacity: 0.1, color: '#475569', fillOpacity: 0 };
+    }, [visitedCountries, bucketListCountries]);
 
-        if (isBucketList) {
-            return {
-                fillColor: '#c084fc', // Purple
-                weight: 1,
-                opacity: 0.4,
-                color: '#c084fc',
-                fillOpacity: 0.2,
-                dashArray: '3'
-            };
-        }
-
-        return {
-            fillColor: 'transparent',
-            weight: 1,
-            opacity: 0.2,
-            color: '#475569',
-            fillOpacity: 0
-        };
-    };
-
-    const onEachCountry = (feature, layer) => {
+    const onEachCountry = useCallback((feature, layer) => {
         layer.on({
             click: (e) => {
                 L.DomEvent.stopPropagation(e);
-                if (e.originalEvent.shiftKey) {
-                    onToggleBucketList(feature.properties.name);
-                } else {
-                    onToggleCountry(feature.properties.name);
-                }
+                const coords = e.latlng;
+                if (e.originalEvent.shiftKey) onToggleBucketList(feature.properties.name, coords);
+                else onToggleCountry(feature.properties.name, coords);
             },
             mouseover: (e) => {
                 const layer = e.target;
-                layer.setStyle({
-                    fillOpacity: 0.6,
-                    weight: 2
-                });
+                layer.setStyle({ fillOpacity: 0.6, weight: 2 });
             },
             mouseout: (e) => {
                 const layer = e.target;
                 layer.setStyle(countryStyle(feature));
             }
         });
-    };
+    }, [countryStyle, onToggleBucketList, onToggleCountry]);
 
     return (
         <div className="flex-1 h-full relative" id="map-capture-area">
             <MapContainer
-                key={settings?.mapStyle || 'dark'}
+                key={efficientStyle}
                 center={[20, 0]}
                 zoom={2.5}
-                style={{ height: '100%', width: '100%' }}
+                style={{ height: '100%', width: '100%', background: '#020617' }}
                 zoomControl={false}
                 attributionControl={false}
+                preferCanvas={true} // Use Canvas for better performance with many elements
             >
-                <TileLayer
-                    url={TILE_URLS[effectiveStyle]}
-                />
+                <TileLayer url={TILE_URLS[efficientStyle]} />
+
                 <TimelineFlyTo activeCities={activeCities} timelineDate={timelineDate} />
                 <FlyToListener city={selectedCity} />
 
                 {geoData && (
                     <GeoJSON
-                        key={`geo-${visitedCountries.join(',')}-${bucketListCountries.join(',')}`}
+                        key={`geo-${visitedCountries.length}-${bucketListCountries.length}`}
                         data={geoData}
                         style={countryStyle}
                         onEachFeature={onEachCountry}
                     />
                 )}
 
-                {/* Curved Path lines */}
-                {curvedPaths.map((positions, idx) => (
+                {activePaths.map((path) => (
                     <Polyline
-                        key={`path-${idx}`}
-                        positions={positions}
+                        key={path.id}
+                        positions={path.positions}
                         color="#3b82f6"
-                        weight={1.5}
-                        opacity={0.3}
-                        dashArray="5,5"
+                        weight={1.2}
+                        opacity={0.2}
+                        dashArray="4,4"
+                        interactive={false}
                     />
                 ))}
 
@@ -221,39 +206,25 @@ const Map = React.memo(({ visitedCities, bucketListCities, visitedCountries, buc
                             key={`heat-${city.id}`}
                             center={[city.lat, city.lng]}
                             radius={20}
-                            pathOptions={{
-                                fillColor: '#3b82f6',
-                                fillOpacity: 0.15,
-                                color: 'transparent',
-                                className: 'animate-pulse'
-                            }}
+                            pathOptions={{ fillColor: '#3b82f6', fillOpacity: 0.1, color: 'transparent' }}
+                            interactive={false}
                         />
                     ) : (
-                        <Marker key={city.id} position={[city.lat, city.lng]} icon={getEmojiIcon(city.customEmoji)}>
+                        <Marker
+                            key={`marker-${city.id}`}
+                            position={[city.lat, city.lng]}
+                            icon={getEmojiIcon(city.customEmoji)}
+                        >
                             <Popup className="travel-popup">
                                 <div className="p-1 min-w-[200px]">
                                     {city.photo && (
                                         <div className="w-full h-32 mb-2 overflow-hidden rounded-lg">
-                                            <img
-                                                src={city.photo}
-                                                alt={city.name}
-                                                className="w-full h-full object-cover"
-                                            />
+                                            <img src={city.photo} alt={city.name} className="w-full h-full object-cover" />
                                         </div>
                                     )}
-                                    <h4 className="text-slate-900 font-bold border-b border-slate-100 pb-2 mb-2">
-                                        {city.name}
-                                    </h4>
-                                    <div className="flex items-center gap-2 text-[10px] text-slate-500 mb-2">
-                                        <span>{new Date(city.date).toLocaleDateString()}</span>
-                                    </div>
-                                    {city.notes ? (
-                                        <div className="bg-slate-50 p-2 rounded-lg italic text-xs text-slate-600 flex gap-2">
-                                            <p>{city.notes}</p>
-                                        </div>
-                                    ) : (
-                                        <p className="text-[10px] text-slate-400 italic">No journal notes yet...</p>
-                                    )}
+                                    <h4 className="text-slate-900 font-bold border-b border-slate-100 pb-2 mb-2">{city.name}</h4>
+                                    <div className="text-[10px] text-slate-500 mb-2">{new Date(city.date).toLocaleDateString()}</div>
+                                    {city.notes ? <p className="bg-slate-50 p-2 rounded-lg italic text-xs text-slate-600">{city.notes}</p> : <p className="text-[10px] text-slate-400 italic">No journal notes yet...</p>}
                                 </div>
                             </Popup>
                         </Marker>
@@ -265,9 +236,7 @@ const Map = React.memo(({ visitedCities, bucketListCities, visitedCountries, buc
                         <Popup className="travel-popup">
                             <div className="p-1">
                                 <h4 className="text-slate-900 font-bold mb-1">{city.name}</h4>
-                                <p className="text-[10px] text-purple-600 font-bold uppercase tracking-widest">
-                                    ✨ Bucket List
-                                </p>
+                                <p className="text-[10px] text-purple-600 font-bold uppercase tracking-widest">✨ Bucket List</p>
                             </div>
                         </Popup>
                     </Marker>
@@ -288,9 +257,7 @@ const Map = React.memo(({ visitedCities, bucketListCities, visitedCountries, buc
                     <div className="w-8 border-t border-dashed border-blue-500/60"></div>
                     <span className="text-slate-200">Travel Route</span>
                 </div>
-                <div className="border-t border-white/10 pt-2 text-slate-500 normal-case font-medium">
-                    Shift + Click to toggle Bucket List
-                </div>
+                <div className="border-t border-white/10 pt-2 text-slate-500 normal-case font-medium">Shift + Click to toggle Bucket List</div>
             </div>
         </div>
     );

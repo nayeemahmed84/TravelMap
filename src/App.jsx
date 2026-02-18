@@ -15,6 +15,13 @@ function App() {
   const [showWrapped, setShowWrapped] = useState(false);
   const [wrappedStats, setWrappedStats] = useState(null);
   const [timelineDate, setTimelineDate] = useState(new Date().toISOString().split('T')[0]);
+  const [isTimelinePending, startTimelineTransition] = React.useTransition();
+
+  const handleTimelineChange = (date) => {
+    startTimelineTransition(() => {
+      setTimelineDate(date);
+    });
+  };
 
   useEffect(() => {
     const savedData = LocationService.loadData();
@@ -37,14 +44,14 @@ function App() {
     setStats(LocationService.calculateStats(newData));
   };
 
-  const handleToggleCountry = (countryName) => {
-    const newData = LocationService.toggleCountry(countryName, data);
+  const handleToggleCountry = (countryName, coords = null) => {
+    const newData = LocationService.toggleCountry(countryName, data, coords);
     setData(newData);
     setStats(LocationService.calculateStats(newData));
   };
 
-  const handleToggleBucketList = (countryName) => {
-    const newData = LocationService.toggleBucketList(countryName, data);
+  const handleToggleBucketList = (countryName, coords = null) => {
+    const newData = LocationService.toggleBucketList(countryName, data, coords);
     setData(newData);
     setStats(LocationService.calculateStats(newData));
   };
@@ -149,7 +156,7 @@ function App() {
       <Timeline
         cities={data.visitedCities}
         currentDate={timelineDate}
-        onChange={setTimelineDate}
+        onChange={handleTimelineChange}
       />
       <Map
         visitedCities={data.visitedCities}

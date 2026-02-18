@@ -290,7 +290,7 @@ export const LocationService = {
         return newData;
     },
 
-    toggleCountry: (countryName, currentData) => {
+    toggleCountry: (countryName, currentData, coords = null) => {
         const isVisited = currentData.visitedCountries.includes(countryName);
         const newData = { ...currentData };
 
@@ -302,13 +302,32 @@ export const LocationService = {
         } else {
             newData.visitedCountries = [...currentData.visitedCountries, countryName];
             newData.bucketListCountries = currentData.bucketListCountries.filter(c => c !== countryName);
+
+            // Auto-create a journal entry if coordinates provided and no city exists
+            if (coords) {
+                const hasCity = currentData.visitedCities.some(c => c.country === countryName);
+                if (!hasCity) {
+                    const defaultCity = {
+                        id: Math.random().toString(36).substr(2, 9),
+                        name: `${countryName} (General Visit)`,
+                        country: countryName,
+                        lat: coords.lat,
+                        lng: coords.lng,
+                        date: new Date().toISOString().split('T')[0],
+                        notes: `Explored ${countryName}`,
+                        photo: null,
+                        cost: 0
+                    };
+                    newData.visitedCities = [...currentData.visitedCities, defaultCity].sort((a, b) => new Date(a.date) - new Date(b.date));
+                }
+            }
         }
 
         LocationService.saveData(newData);
         return newData;
     },
 
-    toggleBucketList: (countryName, currentData) => {
+    toggleBucketList: (countryName, currentData, coords = null) => {
         if (currentData.visitedCountries.includes(countryName)) return currentData;
 
         const isBucket = currentData.bucketListCountries.includes(countryName);
@@ -320,6 +339,21 @@ export const LocationService = {
             newData.bucketListCities = currentData.bucketListCities.filter(c => c.country !== countryName);
         } else {
             newData.bucketListCountries = [...currentData.bucketListCountries, countryName];
+
+            // Auto-create a bucket city if coordinates provided and no bucket city exists
+            if (coords) {
+                const hasBucketCity = currentData.bucketListCities.some(c => c.country === countryName);
+                if (!hasBucketCity) {
+                    const defaultBucketCity = {
+                        id: Math.random().toString(36).substr(2, 9),
+                        name: `${countryName} (Planned)`,
+                        country: countryName,
+                        lat: coords.lat,
+                        lng: coords.lng,
+                    };
+                    newData.bucketListCities = [...currentData.bucketListCities, defaultBucketCity];
+                }
+            }
         }
 
         LocationService.saveData(newData);

@@ -6,7 +6,7 @@ const Timeline = React.memo(({ cities, currentDate, onChange }) => {
 
     // Local state for smooth sliding
     const [localVal, setLocalVal] = React.useState(new Date(currentDate).getTime());
-    const debounceRef = React.useRef(null);
+    const throttleRef = React.useRef(0);
 
     React.useEffect(() => {
         const currentMs = new Date(currentDate).getTime();
@@ -25,12 +25,14 @@ const Timeline = React.memo(({ cities, currentDate, onChange }) => {
         const val = parseInt(e.target.value);
         setLocalVal(val);
 
-        // Debounce parent state update to free up main thread for the slider thumb
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => {
+        // Throttle parent update (32ms = ~30fps map updates)
+        // This keeps the thumb at 60fps while map updates just enough
+        const now = Date.now();
+        if (now - throttleRef.current > 32) {
             const dateString = new Date(val).toISOString().split('T')[0];
             onChange(dateString);
-        }, 80); // 80ms gives the slider ~12fps updates for the map while thumb stays at 60fps
+            throttleRef.current = now;
+        }
     };
 
     const step = (direction) => {

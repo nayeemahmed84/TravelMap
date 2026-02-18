@@ -9,6 +9,8 @@ import {
 import confetti from 'canvas-confetti';
 import html2canvas from 'html2canvas';
 import ImageService from '../utils/ImageService';
+import { CONTINENTS } from '../utils/LocationService';
+import { CountryService } from '../utils/CountryService';
 
 const StampImage = ({ stamp }) => {
     const [src, setSrc] = React.useState(stamp.url);
@@ -82,7 +84,7 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
             });
         } else {
             onAddCity(cityData);
-            setActiveTab('journal');
+            setActiveTab('cities');
             confetti({
                 particleCount: 100,
                 spread: 70,
@@ -198,7 +200,8 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
             <div className="flex px-8 gap-4 border-b border-white/5 mb-6 overflow-x-auto no-scrollbar">
                 {[
                     { id: 'stats', label: 'Stats', icon: TrendingUp },
-                    { id: 'journal', label: 'Journal', icon: BookOpen },
+                    { id: 'countries', label: 'Countries', icon: Globe },
+                    { id: 'cities', label: 'Cities', icon: BookOpen },
                     { id: 'gallery', label: 'Gallery', icon: ImageIcon },
                     { id: 'vault', label: 'Vault', icon: Save },
                     { id: 'bucket', label: 'Bucket', icon: Compass },
@@ -284,7 +287,50 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                     </div>
                 )}
 
-                {activeTab === 'journal' && (
+                {activeTab === 'countries' && (
+                    <div className="space-y-6 animate-fade-in">
+                        {Object.entries(CONTINENTS).map(([continent, countries]) => {
+                            const visitedInCont = data.visitedCountries.filter(c => countries.includes(c));
+                            if (visitedInCont.length === 0) return null;
+
+                            return (
+                                <div key={continent} className="space-y-3">
+                                    <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] px-1 flex justify-between">
+                                        {continent}
+                                        <span className="text-blue-500">{visitedInCont.length} visited</span>
+                                    </h3>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {visitedInCont.map(country => (
+                                            <div key={country} className="flex items-center justify-between p-4 glass rounded-[1.5rem] border-white/5 group hover:border-blue-500/20 transition-all">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-8 h-8 rounded-xl bg-blue-500/10 flex items-center justify-center overflow-hidden border border-white/5 shadow-sm">
+                                                        {CountryService.getFlagUrl(country) ? (
+                                                            <img src={CountryService.getFlagUrl(country)} alt={country} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <span className="text-blue-400 font-black text-[10px]">{country.substring(0, 2).toUpperCase()}</span>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-sm font-bold text-slate-200">{country}</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => onToggleCountry(country)}
+                                                    className="p-2 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {data.visitedCountries.length === 0 && (
+                            <EmptyState icon={Globe} text="No Countries Yet" sub="Click countries on the map or add cities to see them here." />
+                        )}
+                    </div>
+                )}
+
+                {activeTab === 'cities' && (
                     <div className="space-y-6 animate-fade-in">
                         {/* Advanced Filters */}
                         <div className="flex items-center gap-2 mb-2 p-1 bg-white/5 rounded-2xl border border-white/5">
@@ -308,7 +354,7 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                         </div>
 
                         {data.visitedCities.length === 0 ? (
-                            <EmptyState icon={BookOpen} text="Empty Journal" sub="Start by adding cities you've visited." />
+                            <EmptyState icon={BookOpen} text="No Cities Visited" sub="Start by adding cities you've visited." />
                         ) : (
                             displayMode === 'list' ? (
                                 <div className="space-y-4">

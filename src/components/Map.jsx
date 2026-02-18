@@ -32,15 +32,19 @@ const TimelineFlyTo = ({ activeCities, timelineDate }) => {
 
     useEffect(() => {
         if (activeCities.length > 0 && timelineDate !== lastTimelineDate.current) {
-            // Find the "newest" city on the timeline
-            const newest = [...activeCities].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
-            if (newest) {
-                map.flyTo([newest.lat, newest.lng], map.getZoom(), {
-                    animate: true,
-                    duration: 0.5 // Faster for timeline scrubbing
-                });
-            }
+            // Debounce flyTo for timeline scrubbing
+            const timeout = setTimeout(() => {
+                const newest = [...activeCities].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+                if (newest) {
+                    map.flyTo([newest.lat, newest.lng], map.getZoom(), {
+                        animate: true,
+                        duration: 0.8
+                    });
+                }
+            }, 100);
+
             lastTimelineDate.current = timelineDate;
+            return () => clearTimeout(timeout);
         }
     }, [timelineDate, activeCities, map]);
     return null;
@@ -59,7 +63,7 @@ const FlyToListener = ({ city }) => {
     return null;
 };
 
-const Map = ({ visitedCities, bucketListCities, visitedCountries, bucketListCountries, settings, selectedCity, onToggleCountry, onToggleBucketList, timelineDate }) => {
+const Map = React.memo(({ visitedCities, bucketListCities, visitedCountries, bucketListCountries, settings, selectedCity, onToggleCountry, onToggleBucketList, timelineDate }) => {
     const [geoData, setGeoData] = useState(null);
 
     useEffect(() => {
@@ -69,8 +73,10 @@ const Map = ({ visitedCities, bucketListCities, visitedCountries, bucketListCoun
             .catch(err => console.error('Error loading GeoJSON:', err));
     }, []);
 
-    // Filter cities based on timeline
-    const activeCities = visitedCities.filter(c => c.date <= (timelineDate || new Date().toISOString()));
+    // Filter cities based on timeline - MEMOIZED
+    const activeCities = React.useMemo(() =>
+        visitedCities.filter(c => c.date <= (timelineDate || new Date().toISOString())),
+        [visitedCities, timelineDate]);
 
     // Custom emoji icon
     const getEmojiIcon = (cityEmoji) => L.divIcon({
@@ -95,17 +101,22 @@ const Map = ({ visitedCities, bucketListCities, visitedCountries, bucketListCoun
         ? (isNight ? 'dark' : 'light')
         : (settings?.mapStyle || 'dark');
 
-    // Sort cities by date for the path
-    const sortedCities = [...activeCities].sort((a, b) => new Date(a.date) - new Date(b.date));
+    // Sort cities by date for the path - MEMOIZED
+    const sortedCities = React.useMemo(() =>
+        [...activeCities].sort((a, b) => new Date(a.date) - new Date(b.date)),
+        [activeCities]);
 
-    // Generate curved path segments
-    const curvedPaths = [];
-    for (let i = 0; i < sortedCities.length - 1; i++) {
-        curvedPaths.push(LocationService.getCurvePoints(
-            [sortedCities[i].lat, sortedCities[i].lng],
-            [sortedCities[i + 1].lat, sortedCities[i + 1].lng]
-        ));
-    }
+    // Generate curved path segments - MEMOIZED
+    const curvedPaths = React.useMemo(() => {
+        const paths = [];
+        for (let i = 0; i < sortedCities.length - 1; i++) {
+            paths.push(LocationService.getCurvePoints(
+                [sortedCities[i].lat, sortedCities[i].lng],
+                [sortedCities[i + 1].lat, sortedCities[i + 1].lng]
+            ));
+        }
+        return paths;
+    }, [sortedCities]);
 
     // ... countryStyle and onEachCountry (keep as is) ...
 
@@ -283,6 +294,6 @@ const Map = ({ visitedCities, bucketListCities, visitedCountries, bucketListCoun
             </div>
         </div>
     );
-};
+});
 
 export default Map;

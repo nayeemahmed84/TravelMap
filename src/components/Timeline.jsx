@@ -1,14 +1,19 @@
 import React from 'react';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 
-const Timeline = ({ cities, currentDate, onChange }) => {
-    const sortedCities = [...cities].sort((a, b) => new Date(a.date) - new Date(b.date));
+const Timeline = React.memo(({ cities, currentDate, onChange }) => {
+    const sortedCities = React.useMemo(() => [...cities].sort((a, b) => new Date(a.date) - new Date(b.date)), [cities]);
 
     // Local state for smooth sliding
     const [localVal, setLocalVal] = React.useState(new Date(currentDate).getTime());
+    const debounceRef = React.useRef(null);
 
     React.useEffect(() => {
-        setLocalVal(new Date(currentDate).getTime());
+        const currentMs = new Date(currentDate).getTime();
+        // Sync parent date back to local state only if it's a significant jump (prevents fighting with local drag)
+        if (Math.abs(localVal - currentMs) > 1000 * 60 * 60 * 24) {
+            setLocalVal(currentMs);
+        }
     }, [currentDate]);
 
     if (sortedCities.length < 2) return null;
@@ -19,8 +24,13 @@ const Timeline = ({ cities, currentDate, onChange }) => {
     const handleInput = (e) => {
         const val = parseInt(e.target.value);
         setLocalVal(val);
-        const dateString = new Date(val).toISOString().split('T')[0];
-        onChange(dateString);
+
+        // Debounce parent state update to free up main thread for the slider thumb
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => {
+            const dateString = new Date(val).toISOString().split('T')[0];
+            onChange(dateString);
+        }, 80); // 80ms gives the slider ~12fps updates for the map while thumb stays at 60fps
     };
 
     const step = (direction) => {
@@ -30,6 +40,8 @@ const Timeline = ({ cities, currentDate, onChange }) => {
             : Math.max(currentIndex - 1, 0);
         onChange(sortedCities[nextIndex].date);
     };
+
+    const progressPercent = ((localVal - minDate) / (maxDate - minDate)) * 100;
 
     return (
         <div className="fixed bottom-10 left-[calc(50%+225px)] -translate-x-1/2 w-[calc(100%-550px)] max-w-[800px] z-[1000] glass p-6 rounded-[2.5rem] border-white/10 shadow-2xl animate-slide-up">
@@ -58,11 +70,11 @@ const Timeline = ({ cities, currentDate, onChange }) => {
                 />
                 <div
                     className="absolute h-full bg-gradient-to-r from-blue-600 to-amber-500 rounded-full"
-                    style={{ width: `${((localVal - minDate) / (maxDate - minDate)) * 100}%` }}
+                    style={{ width: `${progressPercent}%`, willChange: 'width' }}
                 />
                 <div
                     className="absolute top-1/2 -translate-y-1/2 w-5 h-5 bg-white rounded-full shadow-[0_0_20px_rgba(59,130,246,0.5)] border-4 border-blue-600 cursor-grab active:cursor-grabbing"
-                    style={{ left: `${((localVal - minDate) / (maxDate - minDate)) * 100}%`, transform: `translate(-50%, -50%)` }}
+                    style={{ left: `${progressPercent}%`, transform: `translate(-50%, -50%)`, willChange: 'left' }}
                 />
 
                 {/* City Anchors */}
@@ -80,6 +92,6 @@ const Timeline = ({ cities, currentDate, onChange }) => {
             </div>
         </div>
     );
-};
+});
 
 export default Timeline;

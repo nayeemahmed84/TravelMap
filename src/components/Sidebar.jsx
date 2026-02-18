@@ -149,13 +149,29 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
         <div className="w-[450px] h-full glass border-r border-white/10 flex flex-col z-[1001] animate-fade-in relative">
             {/* Header */}
             <div className="p-8 pb-4">
-                <div className="flex items-center justify-between mb-2">
-                    <h1 className="text-3xl font-black bg-gradient-to-br from-amber-200 via-amber-400 to-blue-500 bg-clip-text text-transparent">
-                        TravelMap
-                    </h1>
+                <div className="flex items-center justify-between mb-8 group">
+                    <div className="flex items-center gap-4">
+                        <div className="relative w-12 h-12 flex items-center justify-center">
+                            <div className="absolute inset-0 bg-blue-500/20 rounded-2xl blur-xl group-hover:bg-blue-500/40 transition-all duration-500"></div>
+                            <div className="relative w-12 h-12 bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl border border-white/10 flex items-center justify-center shadow-2xl group-hover:scale-110 transition-transform duration-500">
+                                <Globe className="w-6 h-6 text-blue-400 animate-pulse-slow" />
+                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-amber-400 rounded-full border-2 border-slate-900 shadow-[0_0_10px_rgba(251,191,36,0.6)]"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <h1 className="text-2xl font-black tracking-tight leading-none text-white drop-shadow-sm">
+                                <span className="bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Travel</span>
+                                <span className="bg-gradient-to-r from-blue-400 to-amber-400 bg-clip-text text-transparent">Map</span>
+                            </h1>
+                            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-[0.3em] mt-1 group-hover:text-blue-400 transition-colors">
+                                World Explorer
+                            </p>
+                        </div>
+                    </div>
+
                     <button
                         onClick={() => setActiveTab('settings')}
-                        className={`p-2 rounded-xl transition-all ${activeTab === 'settings' ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-white'}`}
+                        className={`p-2.5 rounded-xl transition-all duration-300 border border-transparent hover:border-white/10 ${activeTab === 'settings' ? 'bg-blue-500/20 text-blue-400 border-blue-500/20' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
                     >
                         <SettingsIcon className="w-5 h-5" />
                     </button>

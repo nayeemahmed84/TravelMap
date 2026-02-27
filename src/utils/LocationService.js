@@ -27,11 +27,15 @@ export const LocationService = {
             bucketListCountries: [],
             bucketListCities: [],
             settings: {
-                mapStyle: 'dark', // dark, satellite, light, vintage
+                mapStyle: 'dark',
                 globalEmoji: '📍',
-                showHeatmap: false
+                showHeatmap: false,
+                theme: 'dark',
+                weatherOverlay: false,
+                autoDayNight: false
             },
-            passportStamps: []
+            passportStamps: [],
+            tripPlans: []
         };
         if (!data) return defaultData;
 
@@ -41,8 +45,13 @@ export const LocationService = {
             ...city,
             id: city.id || Math.random().toString(36).substr(2, 9),
             date: city.date || new Date().toISOString().split('T')[0],
+            departureDate: city.departureDate || null,
             notes: city.notes || '',
-            photo: city.photo || null
+            journal: city.journal || '',
+            photo: city.photo || null,
+            photos: city.photos || (city.photo ? [city.photo] : []),
+            tags: city.tags || [],
+            budget: city.budget || { amount: 0, currency: 'USD', items: [] }
         })).sort((a, b) => new Date(a.date) - new Date(b.date));
 
         return {
@@ -55,14 +64,7 @@ export const LocationService = {
 
     calculateStats: (data) => {
         const visitedCount = data.visitedCountries.length;
-
-        // Achievement Logic
-        const achievements = [];
         const worldPercentage = (visitedCount / TOTAL_COUNTRIES) * 100;
-
-        if (visitedCount >= 1) achievements.push({ id: 'first_step', title: 'First Step', description: 'Visited your first country!', icon: '👣' });
-        if (worldPercentage >= 5) achievements.push({ id: 'explorer', title: 'Explorer', description: 'Reached 5% world coverage', icon: '🗺️' });
-        if (worldPercentage >= 10) achievements.push({ id: 'nomad', title: 'Total Nomad', description: 'Reached 10% world coverage', icon: '🌎' });
 
         // Continent Logic
         const continentStats = Object.keys(CONTINENTS).map(cont => {
@@ -75,9 +77,6 @@ export const LocationService = {
                 percentage: ((visitedInCont / totalInCont) * 100).toFixed(1)
             };
         });
-
-        const hasThreeContinents = continentStats.filter(s => s.visited >= 1).length >= 3;
-        if (hasThreeContinents) achievements.push({ id: 'continent_hopper', title: 'Continent Hopper', description: 'Visited 3 different continents', icon: '✈️' });
 
         // Distance Calculation
         let totalDistance = 0;
@@ -92,6 +91,14 @@ export const LocationService = {
         // Trip Grouping
         const trips = LocationService.groupTrips(sorted);
 
+        // Enhanced Achievements
+        const achievements = LocationService.calculateEnhancedBadges(data, {
+            visitedCount, worldPercentage, continentStats, totalDistance, trips
+        });
+
+        // Budget totals
+        const totalBudget = LocationService.calculateTotalBudget(data.visitedCities);
+
         return {
             visitedCount,
             totalCount: TOTAL_COUNTRIES,
@@ -99,7 +106,8 @@ export const LocationService = {
             totalDistance: Math.round(totalDistance),
             achievements,
             continentStats,
-            trips
+            trips,
+            totalBudget
         };
     },
 
@@ -229,9 +237,14 @@ export const LocationService = {
         const newCity = {
             ...city,
             notes: city.notes || '',
+            journal: city.journal || '',
             date: city.date || new Date().toISOString().split('T')[0],
+            departureDate: city.departureDate || null,
             photo: city.photo || null,
+            photos: city.photos || (city.photo ? [city.photo] : []),
+            tags: city.tags || [],
             cost: city.cost || 0,
+            budget: city.budget || { amount: 0, currency: 'USD', items: [] },
             customEmoji: city.customEmoji || null,
             weather: city.weather || null
         };
@@ -252,7 +265,7 @@ export const LocationService = {
     },
 
     addBucketCity: (city, currentData) => {
-        const bucketListCities = [...currentData.bucketListCities, { ...city, id: city.id || Math.random().toString(36).substr(2, 9) }];
+        const bucketListCities = [...currentData.bucketListCities, { ...city, id: city.id || Math.random().toString(36).substr(2, 9), targetDate: city.targetDate || null }];
         const newData = {
             ...currentData,
             bucketListCities
@@ -510,5 +523,236 @@ export const LocationService = {
             peakMonth: monthNames[peakMonthIdx],
             topCity: yearCities[yearCities.length - 1].name
         };
+    },
+
+    // ═══════════════════════════════════════════
+    // ENHANCED BADGES (15+ achievements)
+    // ═══════════════════════════════════════════
+    calculateEnhancedBadges: (data, computed) => {
+        const { visitedCount, worldPercentage, continentStats, totalDistance, trips } = computed;
+        const achievements = [];
+        const cities = data.visitedCities || [];
+        const countries = data.visitedCountries || [];
+        const continentsVisited = continentStats.filter(s => s.visited >= 1).length;
+        const allTags = cities.flatMap(c => c.tags || []);
+        const photoCities = cities.filter(c => (c.photos?.length || 0) > 0 || c.photo);
+        const islandNations = ['Maldives', 'Fiji', 'Bahamas', 'Jamaica', 'Cuba', 'Sri Lanka', 'Madagascar', 'Iceland', 'Singapore', 'Japan', 'Philippines', 'Indonesia', 'New Zealand', 'Australia'];
+        const islandCount = countries.filter(c => islandNations.includes(c)).length;
+
+        // Progression badges
+        if (visitedCount >= 1) achievements.push({ id: 'first_step', title: 'First Step', description: 'Visited your first country!', icon: '👣', earned: true });
+        if (visitedCount >= 5) achievements.push({ id: 'wanderer', title: 'Wanderer', description: 'Visited 5 countries', icon: '🚶', earned: true });
+        if (worldPercentage >= 5) achievements.push({ id: 'explorer', title: 'Explorer', description: 'Reached 5% world coverage', icon: '🗺️', earned: true });
+        if (worldPercentage >= 10) achievements.push({ id: 'nomad', title: 'Total Nomad', description: '10% world coverage', icon: '🌎', earned: true });
+        if (worldPercentage >= 25) achievements.push({ id: 'globetrotter', title: 'Globetrotter', description: '25% world coverage!', icon: '🌐', earned: true });
+        if (worldPercentage >= 50) achievements.push({ id: 'half_world', title: 'Half the World', description: '50% world coverage!', icon: '🏆', earned: true });
+
+        // Continent badges
+        if (continentsVisited >= 3) achievements.push({ id: 'continent_hopper', title: 'Continent Hopper', description: '3 continents visited', icon: '✈️', earned: true });
+        if (continentsVisited >= 5) achievements.push({ id: 'world_citizen', title: 'World Citizen', description: '5 continents visited', icon: '🌍', earned: true });
+        if (continentsVisited >= 6) achievements.push({ id: 'all_continents', title: 'All Continents', description: 'Visited every continent!', icon: '👑', earned: true });
+
+        // Distance badges
+        if (totalDistance >= 10000) achievements.push({ id: 'road_warrior', title: 'Road Warrior', description: '10,000+ km traveled', icon: '🛣️', earned: true });
+        if (totalDistance >= 40075) achievements.push({ id: 'around_world', title: 'Around the World', description: 'Traveled Earth\'s circumference!', icon: '🚀', earned: true });
+
+        // Special badges
+        if (islandCount >= 3) achievements.push({ id: 'island_hopper', title: 'Island Hopper', description: '3+ island nations visited', icon: '🏝️', earned: true });
+        if (cities.length >= 10) achievements.push({ id: 'city_collector', title: 'City Collector', description: '10+ cities logged', icon: '🏙️', earned: true });
+        if (cities.length >= 50) achievements.push({ id: 'urban_legend', title: 'Urban Legend', description: '50+ cities logged', icon: '🌆', earned: true });
+        if (photoCities.length >= 5) achievements.push({ id: 'photo_pro', title: 'Photo Pro', description: '5+ cities with photos', icon: '📸', earned: true });
+        if (allTags.includes('Solo')) achievements.push({ id: 'solo_warrior', title: 'Solo Warrior', description: 'Completed a solo trip', icon: '🦅', earned: true });
+        if (allTags.includes('Family')) achievements.push({ id: 'family_voyager', title: 'Family Voyager', description: 'Traveled with family', icon: '👨‍👩‍👧‍👦', earned: true });
+        if (trips.length >= 5) achievements.push({ id: 'serial_traveler', title: 'Serial Traveler', description: '5+ trips completed', icon: '🔄', earned: true });
+        if ((data.bucketListCountries?.length || 0) >= 10) achievements.push({ id: 'big_dreamer', title: 'Big Dreamer', description: '10+ bucket list countries', icon: '💫', earned: true });
+
+        // Locked badges (show as targets)
+        const locked = [];
+        if (visitedCount < 5) locked.push({ id: 'wanderer_locked', title: 'Wanderer', description: 'Visit 5 countries', icon: '🚶', earned: false });
+        if (worldPercentage < 25) locked.push({ id: 'globetrotter_locked', title: 'Globetrotter', description: 'Reach 25% world coverage', icon: '🌐', earned: false });
+        if (continentsVisited < 5) locked.push({ id: 'world_citizen_locked', title: 'World Citizen', description: 'Visit 5 continents', icon: '🌍', earned: false });
+        if (totalDistance < 40075) locked.push({ id: 'around_world_locked', title: 'Around the World', description: `Travel ${Math.round(40075 - totalDistance).toLocaleString()} more km`, icon: '🚀', earned: false });
+        if (islandCount < 3) locked.push({ id: 'island_hopper_locked', title: 'Island Hopper', description: 'Visit 3+ island nations', icon: '🏝️', earned: false });
+
+        return [...achievements, ...locked];
+    },
+
+    // ═══════════════════════════════════════════
+    // BUDGET CALCULATOR
+    // ═══════════════════════════════════════════
+    calculateTotalBudget: (cities) => {
+        const byCurrency = {};
+        let totalUSD = 0;
+        cities.forEach(city => {
+            const amount = parseFloat(city.budget?.amount) || parseFloat(city.cost) || 0;
+            const currency = city.budget?.currency || 'USD';
+            byCurrency[currency] = (byCurrency[currency] || 0) + amount;
+            totalUSD += amount; // Simplified, no conversion
+        });
+        return { totalUSD: Math.round(totalUSD), byCurrency };
+    },
+
+    // ═══════════════════════════════════════════
+    // GPX PARSER
+    // ═══════════════════════════════════════════
+    parseGPX: (xmlText) => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlText, 'text/xml');
+        const waypoints = doc.querySelectorAll('wpt');
+        const trackpoints = doc.querySelectorAll('trkpt');
+        const cities = [];
+
+        const processPoint = (pt) => {
+            const lat = parseFloat(pt.getAttribute('lat'));
+            const lon = parseFloat(pt.getAttribute('lon'));
+            const nameEl = pt.querySelector('name');
+            const timeEl = pt.querySelector('time');
+            return {
+                id: Math.random().toString(36).substr(2, 9),
+                name: nameEl?.textContent || `Point (${lat.toFixed(2)}, ${lon.toFixed(2)})`,
+                country: 'Unknown',
+                lat,
+                lng: lon,
+                date: timeEl?.textContent ? new Date(timeEl.textContent).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                notes: 'Imported from GPX',
+                photos: [],
+                tags: ['Imported'],
+                budget: { amount: 0, currency: 'USD', items: [] }
+            };
+        };
+
+        waypoints.forEach(pt => cities.push(processPoint(pt)));
+        // For tracks, sample every Nth point to avoid thousands
+        const sampleRate = Math.max(1, Math.floor(trackpoints.length / 50));
+        trackpoints.forEach((pt, i) => {
+            if (i % sampleRate === 0) cities.push(processPoint(pt));
+        });
+
+        return cities;
+    },
+
+    // ═══════════════════════════════════════════
+    // KML PARSER
+    // ═══════════════════════════════════════════
+    parseKML: (xmlText) => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(xmlText, 'text/xml');
+        const placemarks = doc.querySelectorAll('Placemark');
+        const cities = [];
+
+        placemarks.forEach(pm => {
+            const nameEl = pm.querySelector('name');
+            const coordEl = pm.querySelector('coordinates');
+            if (!coordEl) return;
+
+            const coords = coordEl.textContent.trim().split(',');
+            if (coords.length < 2) return;
+
+            cities.push({
+                id: Math.random().toString(36).substr(2, 9),
+                name: nameEl?.textContent || 'Unknown',
+                country: 'Unknown',
+                lat: parseFloat(coords[1]),
+                lng: parseFloat(coords[0]),
+                date: new Date().toISOString().split('T')[0],
+                notes: 'Imported from KML',
+                photos: [],
+                tags: ['Imported'],
+                budget: { amount: 0, currency: 'USD', items: [] }
+            });
+        });
+
+        return cities;
+    },
+
+    // ═══════════════════════════════════════════
+    // SHAREABLE HTML PROFILE
+    // ═══════════════════════════════════════════
+    generateShareableHTML: (data, stats) => {
+        const countries = data.visitedCountries || [];
+        const cities = data.visitedCities || [];
+        const topCities = cities.slice(-10).reverse();
+
+        return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Travel Map Profile</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; padding: 40px 20px; }
+  .card { max-width: 600px; margin: 0 auto; background: rgba(15,23,42,0.9); border: 1px solid rgba(255,255,255,0.1); border-radius: 2rem; padding: 48px; backdrop-filter: blur(20px); }
+  h1 { font-size: 2rem; font-weight: 900; background: linear-gradient(to right, #60a5fa, #fbbf24); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px; }
+  .subtitle { font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.3em; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: 32px 0; }
+  .stat { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.05); border-radius: 1.5rem; padding: 24px; text-align: center; }
+  .stat-num { font-size: 2rem; font-weight: 900; color: #60a5fa; }
+  .stat-label { font-size: 9px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 0.2em; margin-top: 4px; }
+  .bar { height: 8px; background: #1e293b; border-radius: 999px; margin: 24px 0; overflow: hidden; }
+  .bar-fill { height: 100%; background: linear-gradient(to right, #3b82f6, #f59e0b); border-radius: 999px; }
+  .cities { margin-top: 24px; }
+  .city { display: flex; align-items: center; gap: 12px; padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+  .city-dot { width: 8px; height: 8px; border-radius: 50%; background: #3b82f6; flex-shrink: 0; }
+  .city-name { font-weight: 700; font-size: 14px; }
+  .city-country { font-size: 10px; color: #64748b; text-transform: uppercase; }
+  .footer { text-align: center; margin-top: 32px; font-size: 10px; color: #334155; font-weight: 600; text-transform: uppercase; letter-spacing: 0.2em; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>TravelMap</h1>
+    <p class="subtitle">World Explorer Profile</p>
+    <div class="stats">
+      <div class="stat"><div class="stat-num">${stats.visitedCount}</div><div class="stat-label">Countries</div></div>
+      <div class="stat"><div class="stat-num">${cities.length}</div><div class="stat-label">Cities</div></div>
+      <div class="stat"><div class="stat-num">${stats.totalDistance?.toLocaleString()}</div><div class="stat-label">KM Traveled</div></div>
+    </div>
+    <div class="bar"><div class="bar-fill" style="width:${stats.percentage}%"></div></div>
+    <p class="subtitle" style="text-align:center">${stats.percentage}% of the world explored</p>
+    <div class="cities">
+      ${topCities.map(c => `<div class="city"><div class="city-dot"></div><div><div class="city-name">${c.name}</div><div class="city-country">${c.country}</div></div></div>`).join('')}
+    </div>
+    <div class="footer">Generated by TravelMap • ${new Date().toLocaleDateString()}</div>
+  </div>
+</body>
+</html>`;
+    },
+
+    // ═══════════════════════════════════════════
+    // BUCKET LIST REMINDERS
+    // ═══════════════════════════════════════════
+    getUpcomingReminders: (data) => {
+        const now = new Date();
+        const upcoming = (data.bucketListCities || [])
+            .filter(c => c.targetDate && new Date(c.targetDate) > now)
+            .sort((a, b) => new Date(a.targetDate) - new Date(b.targetDate));
+        const overdue = (data.bucketListCities || [])
+            .filter(c => c.targetDate && new Date(c.targetDate) <= now)
+            .sort((a, b) => new Date(b.targetDate) - new Date(a.targetDate));
+        return { upcoming, overdue };
+    },
+
+    // ═══════════════════════════════════════════
+    // TRIP PLANS (Route Builder)
+    // ═══════════════════════════════════════════
+    saveTripPlan: (plan, currentData) => {
+        const plans = [...(currentData.tripPlans || []), { ...plan, id: plan.id || Date.now() }];
+        const newData = { ...currentData, tripPlans: plans };
+        LocationService.saveData(newData);
+        return newData;
+    },
+
+    removeTripPlan: (planId, currentData) => {
+        const newData = { ...currentData, tripPlans: (currentData.tripPlans || []).filter(p => p.id !== planId) };
+        LocationService.saveData(newData);
+        return newData;
+    },
+
+    updateBucketCity: (cityId, updates, currentData) => {
+        const bucketListCities = currentData.bucketListCities.map(c => c.id === cityId ? { ...c, ...updates } : c);
+        const newData = { ...currentData, bucketListCities };
+        LocationService.saveData(newData);
+        return newData;
     }
 };

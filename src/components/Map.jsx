@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, GeoJSON, Marker, Popup, Polyline, useMap, Circ
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { LocationService } from '../utils/LocationService';
+import FlightAnimationOverlay from './FlightAnimation';
 
 // Fix for default marker icon issues
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -73,9 +74,13 @@ const Map = React.memo(({
     selectedCity,
     onToggleCountry,
     onToggleBucketList,
+    onCountryInfo,
+    onUpdateSettings,
     timelineDate
 }) => {
     const [geoData, setGeoData] = useState(null);
+    const [showFlightAnimation, setShowFlightAnimation] = useState(false);
+    const [weatherData, setWeatherData] = useState({});
 
     useEffect(() => {
         fetch(GEOJSON_URL)
@@ -83,6 +88,22 @@ const Map = React.memo(({
             .then(data => setGeoData(data))
             .catch(err => console.error('Error loading GeoJSON:', err));
     }, []);
+
+    // Fetch weather for cities when overlay enabled
+    useEffect(() => {
+        if (!settings?.weatherOverlay || visitedCities.length === 0) return;
+        const toFetch = visitedCities.filter(c => !weatherData[c.id]);
+        if (toFetch.length === 0) return;
+        toFetch.slice(0, 10).forEach(async city => {
+            try {
+                const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lng}&current_weather=true`);
+                const data = await res.json();
+                if (data.current_weather) {
+                    setWeatherData(prev => ({ ...prev, [city.id]: data.current_weather }));
+                }
+            } catch (e) { /* silently skip */ }
+        });
+    }, [settings?.weatherOverlay, visitedCities]);
 
     // 1. Pre-calculate ALL possible paths for the entire history
     const allPaths = useMemo(() => {
@@ -150,6 +171,7 @@ const Map = React.memo(({
                 L.DomEvent.stopPropagation(e);
                 const coords = e.latlng;
                 if (e.originalEvent.shiftKey) onToggleBucketList(feature.properties.name, coords);
+                else if (e.originalEvent.ctrlKey && onCountryInfo) onCountryInfo(feature.properties.name);
                 else onToggleCountry(feature.properties.name, coords);
             },
             mouseover: (e) => {
@@ -223,8 +245,16 @@ const Map = React.memo(({
                                         </div>
                                     )}
                                     <h4 className="text-slate-900 font-bold border-b border-slate-100 pb-2 mb-2">{city.name}</h4>
-                                    <div className="text-[10px] text-slate-500 mb-2">{new Date(city.date).toLocaleDateString()}</div>
+                                    <div className="text-[10px] text-slate-500 mb-2">
+                                        {new Date(city.date).toLocaleDateString()}
+                                        {city.departureDate && ` — ${new Date(city.departureDate).toLocaleDateString()}`}
+                                        {settings?.weatherOverlay && weatherData[city.id] && (
+                                            <span className="ml-2 text-blue-500 font-bold">{weatherData[city.id].temperature}°C</span>
+                                        )}
+                                    </div>
+                                    {(city.tags || []).length > 0 && <div className="flex flex-wrap gap-1 mb-2">{city.tags.map(t => <span key={t} className="px-1 py-0.5 bg-blue-50 rounded text-[8px] text-blue-600 font-bold">{t}</span>)}</div>}
                                     {city.notes ? <p className="bg-slate-50 p-2 rounded-lg italic text-xs text-slate-600">{city.notes}</p> : <p className="text-[10px] text-slate-400 italic">No journal notes yet...</p>}
+                                    {city.budget?.amount > 0 && <p className="text-[10px] text-amber-600 font-bold mt-1">💰 ${city.budget.amount}</p>}
                                 </div>
                             </Popup>
                         </Marker>
@@ -237,10 +267,19 @@ const Map = React.memo(({
                             <div className="p-1">
                                 <h4 className="text-slate-900 font-bold mb-1">{city.name}</h4>
                                 <p className="text-[10px] text-purple-600 font-bold uppercase tracking-widest">✨ Bucket List</p>
+                                {city.targetDate && <p className="text-[10px] text-slate-500 mt-1">Target: {new Date(city.targetDate).toLocaleDateString()}</p>}
                             </div>
                         </Popup>
                     </Marker>
                 ))}
+
+                {/* Flight Animation */}
+                {showFlightAnimation && activeCities.length >= 2 && (
+                    <FlightAnimationOverlay
+                        cities={activeCities}
+                        onClose={() => setShowFlightAnimation(false)}
+                    />
+                )}
             </MapContainer>
 
             {/* Legend */}
@@ -257,7 +296,26 @@ const Map = React.memo(({
                     <div className="w-8 border-t border-dashed border-blue-500/60"></div>
                     <span className="text-slate-200">Travel Route</span>
                 </div>
-                <div className="border-t border-white/10 pt-2 text-slate-500 normal-case font-medium">Shift + Click to toggle Bucket List</div>
+                <div className="border-t border-white/10 pt-2 text-slate-500 normal-case font-medium">Shift+Click = Bucket • Ctrl+Click = Info</div>
+            </div>
+
+            {/* Flight replay & theme toggle buttons */}
+            <div className="absolute bottom-6 right-6 z-[1000] flex flex-col gap-2">
+                {activeCities.length >= 2 && (
+                    <button onClick={() => setShowFlightAnimation(!showFlightAnimation)} className="glass p-3 rounded-xl text-white hover:bg-white/10 transition-all shadow-lg border border-white/10" title="Replay Flight Path">
+                        <span className="text-sm">✈️</span>
+                    </button>
+                )}
+                {onUpdateSettings && (
+                    <button onClick={() => {
+                        const styles = ['dark', 'light', 'satellite', 'terrain'];
+                        const current = settings?.mapStyle || 'dark';
+                        const next = styles[(styles.indexOf(current) + 1) % styles.length];
+                        onUpdateSettings({ mapStyle: next, autoDayNight: false });
+                    }} className="glass p-3 rounded-xl text-white hover:bg-white/10 transition-all shadow-lg border border-white/10" title="Toggle Map Style">
+                        <span className="text-sm">{settings?.mapStyle === 'dark' ? '🌙' : settings?.mapStyle === 'light' ? '☀️' : settings?.mapStyle === 'satellite' ? '🛰️' : '🏔️'}</span>
+                    </button>
+                )}
             </div>
         </div>
     );

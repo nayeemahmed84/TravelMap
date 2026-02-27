@@ -3,6 +3,7 @@ import Map from './components/Map';
 import Sidebar from './components/Sidebar';
 import WrappedModal from './components/WrappedModal';
 import Timeline from './components/Timeline';
+import CountryInfoCard from './components/CountryInfoCard';
 import { LocationService } from './utils/LocationService';
 import ImageService from './utils/ImageService';
 import './index.css';
@@ -16,6 +17,7 @@ function App() {
   const [wrappedStats, setWrappedStats] = useState(null);
   const [timelineDate, setTimelineDate] = useState(new Date().toISOString().split('T')[0]);
   const [isTimelinePending, startTimelineTransition] = React.useTransition();
+  const [countryInfoName, setCountryInfoName] = useState(null);
 
   const handleTimelineChange = (date) => {
     startTimelineTransition(() => {
@@ -168,7 +170,15 @@ function App() {
         timelineDate={timelineDate}
         onToggleCountry={handleToggleCountry}
         onToggleBucketList={handleToggleBucketList}
+        onCountryInfo={(name) => setCountryInfoName(name)}
+        onUpdateSettings={handleUpdateSettings}
       />
+      {countryInfoName && (
+        <CountryInfoCard
+          countryName={countryInfoName}
+          onClose={() => setCountryInfoName(null)}
+        />
+      )}
       {showWrapped && (
         <WrappedModal
           stats={wrappedStats}

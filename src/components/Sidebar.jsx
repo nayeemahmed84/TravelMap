@@ -4,13 +4,19 @@ import {
     Award, BookOpen, Compass, ChevronRight,
     Calendar, CheckCircle2, Save, X, Info,
     Camera, Image as ImageIcon, Download, Upload,
-    Settings as SettingsIcon, Share2, Zap
+    Settings as SettingsIcon, Share2, Zap,
+    Tag, DollarSign, Clock, Bell, Route,
+    FileText, Filter, Plane, Sun, Moon, Monitor
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import html2canvas from 'html2canvas';
 import ImageService from '../utils/ImageService';
-import { CONTINENTS } from '../utils/LocationService';
+import { CONTINENTS, LocationService } from '../utils/LocationService';
 import { CountryService } from '../utils/CountryService';
+import TripPlanner from './TripPlanner';
+import PhotoLightbox from './PhotoLightbox';
+
+const PRESET_TAGS = ['Solo', 'Family', 'Business', 'Adventure', 'Foodie', 'Culture', 'Beach', 'City Break', 'Road Trip', 'Backpacking'];
 
 const StampImage = ({ stamp }) => {
     const [src, setSrc] = React.useState(stamp.url);
@@ -39,9 +45,14 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
     const [suggestions, setSuggestions] = useState([]);
     const [isSearching, setIsSearching] = useState(false);
     const [editingId, setEditingId] = useState(null);
-    const [editValues, setEditValues] = useState({ notes: '', date: '', photo: '', customEmoji: '', cost: 0 });
+    const [editValues, setEditValues] = useState({ notes: '', date: '', departureDate: '', photo: '', customEmoji: '', cost: 0, tags: [], journal: '', budgetItems: [] });
     const [filterYear, setFilterYear] = useState('all');
-    const [displayMode, setDisplayMode] = useState('list'); // list, trips
+    const [filterTag, setFilterTag] = useState('all');
+    const [filterCountry, setFilterCountry] = useState('all');
+    const [searchText, setSearchText] = useState('');
+    const [displayMode, setDisplayMode] = useState('list');
+    const [lightbox, setLightbox] = useState({ open: false, photos: [], index: 0, cityName: '' });
+    const [journalExpanded, setJournalExpanded] = useState(null);
 
     const statsRef = useRef(null);
 
@@ -99,11 +110,19 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
 
     const startEditing = (city) => {
         setEditingId(city.id);
-        setEditValues({ notes: city.notes, date: city.date, photo: city.photo || '', customEmoji: city.customEmoji || '', cost: city.cost || 0 });
+        setEditValues({
+            notes: city.notes, date: city.date, departureDate: city.departureDate || '',
+            photo: city.photo || '', customEmoji: city.customEmoji || '', cost: city.cost || 0,
+            tags: city.tags || [], journal: city.journal || '',
+            budgetItems: city.budget?.items || []
+        });
     };
 
     const saveEdit = (id) => {
-        onUpdateCity(id, editValues);
+        onUpdateCity(id, {
+            ...editValues,
+            budget: { amount: editValues.cost, currency: 'USD', items: editValues.budgetItems || [] }
+        });
         setEditingId(null);
     };
 
@@ -218,7 +237,9 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                     { id: 'stats', label: 'Stats', icon: TrendingUp },
                     { id: 'countries', label: 'Countries', icon: Globe },
                     { id: 'cities', label: 'Cities', icon: BookOpen },
+                    { id: 'journal', label: 'Journal', icon: FileText },
                     { id: 'gallery', label: 'Gallery', icon: ImageIcon },
+                    { id: 'planner', label: 'Planner', icon: Route },
                     { id: 'vault', label: 'Vault', icon: Save },
                     { id: 'bucket', label: 'Bucket', icon: Compass },
                     { id: 'achievements', label: 'Badges', icon: Award }
@@ -348,25 +369,25 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
 
                 {activeTab === 'cities' && (
                     <div className="space-y-6 animate-fade-in">
-                        {/* Advanced Filters */}
-                        <div className="flex items-center gap-2 mb-2 p-1 bg-white/5 rounded-2xl border border-white/5">
-                            <select
-                                value={filterYear}
-                                onChange={(e) => setFilterYear(e.target.value)}
-                                className="flex-1 bg-transparent text-[10px] font-bold uppercase tracking-widest text-slate-400 p-2 focus:outline-none"
-                            >
-                                <option value="all">All Years</option>
-                                {[...new Set(data.visitedCities.map(c => new Date(c.date).getFullYear()))].sort((a, b) => b - a).map(year => (
-                                    <option key={year} value={year}>{year}</option>
-                                ))}
-                            </select>
-                            <div className="w-px h-4 bg-white/10" />
-                            <button
-                                onClick={() => setDisplayMode(displayMode === 'list' ? 'trips' : 'list')}
-                                className="px-4 py-2 text-[10px] font-bold uppercase tracking-widest text-blue-400 hover:text-white transition-all"
-                            >
-                                {displayMode === 'list' ? 'Trips View' : 'List View'}
-                            </button>
+                        {/* Smart Filters */}
+                        <div className="space-y-2 mb-2">
+                            <div className="flex items-center gap-2 p-1 bg-white/5 rounded-2xl border border-white/5">
+                                <select value={filterYear} onChange={(e) => setFilterYear(e.target.value)} className="flex-1 bg-transparent text-[10px] font-bold uppercase tracking-widest text-slate-400 p-2 focus:outline-none">
+                                    <option value="all">All Years</option>
+                                    {[...new Set(data.visitedCities.map(c => new Date(c.date).getFullYear()))].sort((a, b) => b - a).map(year => (<option key={year} value={year}>{year}</option>))}
+                                </select>
+                                <div className="w-px h-4 bg-white/10" />
+                                <select value={filterTag} onChange={(e) => setFilterTag(e.target.value)} className="flex-1 bg-transparent text-[10px] font-bold uppercase tracking-widest text-slate-400 p-2 focus:outline-none">
+                                    <option value="all">All Tags</option>
+                                    {[...new Set(data.visitedCities.flatMap(c => c.tags || []))].map(tag => (<option key={tag} value={tag}>{tag}</option>))}
+                                </select>
+                                <div className="w-px h-4 bg-white/10" />
+                                <button onClick={() => setDisplayMode(displayMode === 'list' ? 'trips' : 'list')} className="px-3 py-2 text-[10px] font-bold uppercase tracking-widest text-blue-400 hover:text-white transition-all shrink-0">{displayMode === 'list' ? 'Trips' : 'List'}</button>
+                            </div>
+                            <div className="relative">
+                                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />
+                                <input type="text" value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder="Search cities, notes, tags..." className="w-full bg-white/5 rounded-xl pl-8 pr-3 py-2 text-[10px] text-slate-300 focus:outline-none border border-white/5 font-bold placeholder:text-slate-600" />
+                            </div>
                         </div>
 
                         {data.visitedCities.length === 0 ? (
@@ -376,38 +397,38 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                                 <div className="space-y-4">
                                     {data.visitedCities
                                         .filter(c => filterYear === 'all' || new Date(c.date).getFullYear().toString() === filterYear)
+                                        .filter(c => filterTag === 'all' || (c.tags || []).includes(filterTag))
+                                        .filter(c => !searchText || c.name.toLowerCase().includes(searchText.toLowerCase()) || (c.notes || '').toLowerCase().includes(searchText.toLowerCase()) || (c.journal || '').toLowerCase().includes(searchText.toLowerCase()) || (c.tags || []).some(t => t.toLowerCase().includes(searchText.toLowerCase())))
                                         .reverse()
                                         .map((city) => (
                                             <div key={city.id} className="group glass p-4 rounded-3xl border-white/5 hover:border-white/10 transition-all">
                                                 <div className="flex justify-between items-start mb-2">
                                                     <div className="flex items-center gap-3">
                                                         <div className="w-10 h-10 rounded-2xl bg-blue-500/10 flex items-center justify-center shrink-0 overflow-hidden border border-white/5 shadow-sm">
-                                                            {city.photo ? (
-                                                                <img src={city.photo} className="w-full h-full object-cover" />
-                                                            ) : CountryService.getFlagUrl(city.country) ? (
-                                                                <img src={CountryService.getFlagUrl(city.country)} className="w-full h-full object-cover opacity-80" />
-                                                            ) : (
-                                                                <MapPin className="w-5 h-5 text-blue-400" />
-                                                            )}
+                                                            {city.photo ? (<img src={city.photo} className="w-full h-full object-cover" />) : CountryService.getFlagUrl(city.country) ? (<img src={CountryService.getFlagUrl(city.country)} className="w-full h-full object-cover opacity-80" />) : (<MapPin className="w-5 h-5 text-blue-400" />)}
                                                         </div>
                                                         <div onClick={() => onSelectCity(city)} className="cursor-pointer">
-                                                            <h4 className="text-sm font-black text-slate-200 flex items-center gap-2">
-                                                                {city.customEmoji} {city.name} <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-all" />
-                                                            </h4>
-                                                            <p className="text-[10px] text-slate-500 font-bold uppercase">{city.country}</p>
+                                                            <h4 className="text-sm font-black text-slate-200 flex items-center gap-2">{city.customEmoji} {city.name} <ChevronRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-all" /></h4>
+                                                            <p className="text-[10px] text-slate-500 font-bold uppercase">{city.country}{city.departureDate ? ` • ${Math.ceil((new Date(city.departureDate) - new Date(city.date)) / 86400000)} days` : ''}</p>
                                                         </div>
                                                     </div>
                                                     <button onClick={() => onRemoveCity(city.id)} className="p-2 text-slate-700 hover:text-red-400 transition-all opacity-0 group-hover:opacity-100"><Trash2 className="w-4 h-4" /></button>
                                                 </div>
+                                                {(city.tags || []).length > 0 && (<div className="flex flex-wrap gap-1 mb-2">{city.tags.map(tag => (<span key={tag} className="px-2 py-0.5 bg-blue-500/10 rounded-lg text-[8px] text-blue-400 font-black uppercase border border-blue-500/20">{tag}</span>))}</div>)}
 
                                                 {editingId === city.id ? (
                                                     <div className="mt-4 space-y-3 animate-fade-in">
-                                                        <div className="grid grid-cols-3 gap-2">
-                                                            <input type="date" value={editValues.date} onChange={(e) => setEditValues({ ...editValues, date: e.target.value })} className="bg-slate-800/50 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none col-span-1" />
-                                                            <input type="text" placeholder="Photo URL" value={editValues.photo} onChange={(e) => setEditValues({ ...editValues, photo: e.target.value })} className="bg-slate-800/50 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none col-span-1" />
-                                                            <input type="number" placeholder="Cost" value={editValues.cost} onChange={(e) => setEditValues({ ...editValues, cost: e.target.value })} className="bg-slate-800/50 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none col-span-1" />
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <div><label className="text-[8px] font-black text-slate-500 uppercase mb-1 block">Arrival</label><input type="date" value={editValues.date} onChange={(e) => setEditValues({ ...editValues, date: e.target.value })} className="w-full bg-slate-800/50 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none" /></div>
+                                                            <div><label className="text-[8px] font-black text-slate-500 uppercase mb-1 block">Departure</label><input type="date" value={editValues.departureDate} onChange={(e) => setEditValues({ ...editValues, departureDate: e.target.value })} className="w-full bg-slate-800/50 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none" /></div>
                                                         </div>
-                                                        <textarea value={editValues.notes} onChange={(e) => setEditValues({ ...editValues, notes: e.target.value })} className="w-full bg-slate-800/50 rounded-xl p-3 text-xs text-slate-300 focus:outline-none min-h-[80px]" />
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            <input type="text" placeholder="Photo URL" value={editValues.photo} onChange={(e) => setEditValues({ ...editValues, photo: e.target.value })} className="bg-slate-800/50 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none" />
+                                                            <input type="number" placeholder="Budget ($)" value={editValues.cost} onChange={(e) => setEditValues({ ...editValues, cost: e.target.value })} className="bg-slate-800/50 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none" />
+                                                        </div>
+                                                        <div><label className="text-[8px] font-black text-slate-500 uppercase mb-1 block">Tags</label><div className="flex flex-wrap gap-1">{PRESET_TAGS.map(tag => (<button key={tag} onClick={() => { const tags = editValues.tags || []; setEditValues({ ...editValues, tags: tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag] }); }} className={`px-2 py-1 rounded-lg text-[8px] font-bold transition-all ${(editValues.tags || []).includes(tag) ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-white/5 text-slate-500 border border-white/5 hover:text-white'}`}>{tag}</button>))}</div></div>
+                                                        <textarea placeholder="Quick notes..." value={editValues.notes} onChange={(e) => setEditValues({ ...editValues, notes: e.target.value })} className="w-full bg-slate-800/50 rounded-xl p-3 text-xs text-slate-300 focus:outline-none min-h-[60px]" />
+                                                        <textarea placeholder="Travel journal entry..." value={editValues.journal} onChange={(e) => setEditValues({ ...editValues, journal: e.target.value })} className="w-full bg-slate-800/50 rounded-xl p-3 text-xs text-slate-300 focus:outline-none min-h-[80px] border border-amber-500/10" />
                                                         <div className="flex gap-2">
                                                             <button onClick={() => saveEdit(city.id)} className="flex-1 bg-blue-600 font-bold py-2 rounded-xl text-xs">Save</button>
                                                             <button onClick={() => setEditingId(null)} className="px-4 bg-slate-800 rounded-xl text-xs">Cancel</button>
@@ -518,22 +539,70 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                     </div>
                 )}
 
-                {activeTab === 'gallery' && (
-                    <div className="grid grid-cols-2 gap-3 animate-fade-in">
-                        {data.visitedCities.filter(c => c.photo).map(city => (
-                            <div key={city.id} className="relative aspect-square rounded-3xl overflow-hidden group border border-white/5">
-                                <img src={city.photo} alt={city.name} className="w-full h-full object-cover transition-transform group-hover:scale-110" />
-                                <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 p-3 flex flex-col justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <p className="text-[10px] font-black text-white truncate">{city.name}</p>
-                                    <p className="text-[8px] text-slate-300 uppercase">{city.country}</p>
+                {activeTab === 'journal' && (
+                    <div className="space-y-4 animate-fade-in">
+                        {data.visitedCities.filter(c => c.journal || c.notes).length === 0 ? (
+                            <EmptyState icon={FileText} text="No Journal Entries" sub="Edit a city to add your travel stories." />
+                        ) : data.visitedCities.filter(c => c.journal || c.notes).reverse().map(city => (
+                            <div key={city.id} className="glass p-5 rounded-3xl border-white/5 hover:border-white/10 transition-all">
+                                <div className="flex items-center gap-3 mb-3">
+                                    <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center text-sm">{city.customEmoji || '📝'}</div>
+                                    <div className="flex-1">
+                                        <h4 className="text-sm font-black text-slate-200">{city.name}</h4>
+                                        <p className="text-[9px] text-slate-500 font-bold uppercase">{city.country} • {new Date(city.date).toLocaleDateString()}</p>
+                                    </div>
+                                    <button onClick={() => startEditing(city)} className="text-[9px] font-bold text-blue-500 uppercase">Edit</button>
                                 </div>
+                                {city.journal && <p className="text-xs text-slate-300 leading-relaxed mb-2 whitespace-pre-wrap">{journalExpanded === city.id ? city.journal : city.journal.substring(0, 200)}{city.journal.length > 200 && <button onClick={() => setJournalExpanded(journalExpanded === city.id ? null : city.id)} className="text-blue-400 ml-1 font-bold">{journalExpanded === city.id ? 'less' : '...more'}</button>}</p>}
+                                {city.notes && !city.journal && <p className="text-xs text-slate-400 italic">{city.notes}</p>}
+                                {(city.tags || []).length > 0 && <div className="flex flex-wrap gap-1 mt-2">{city.tags.map(t => <span key={t} className="px-2 py-0.5 bg-blue-500/10 rounded text-[8px] text-blue-400 font-bold">{t}</span>)}</div>}
                             </div>
                         ))}
                     </div>
                 )}
 
+                {activeTab === 'gallery' && (
+                    <div className="space-y-4 animate-fade-in">
+                        <div className="grid grid-cols-2 gap-3">
+                            {data.visitedCities.filter(c => c.photo || (c.photos || []).length > 0).map(city => {
+                                const photos = (city.photos || []).length > 0 ? city.photos : (city.photo ? [city.photo] : []);
+                                return (
+                                    <div key={city.id} className="relative aspect-square rounded-3xl overflow-hidden group border border-white/5 cursor-pointer" onClick={() => setLightbox({ open: true, photos, index: 0, cityName: city.name })}>
+                                        <img src={photos[0]} alt={city.name} className="w-full h-full object-cover transition-transform group-hover:scale-110" />
+                                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 p-3 flex flex-col justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <p className="text-[10px] font-black text-white truncate">{city.name}</p>
+                                            <p className="text-[8px] text-slate-300 uppercase">{city.country}{photos.length > 1 ? ` • ${photos.length} photos` : ''}</p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        {data.visitedCities.filter(c => c.photo || (c.photos || []).length > 0).length === 0 && (
+                            <EmptyState icon={ImageIcon} text="No Photos Yet" sub="Add photo URLs when editing your cities." />
+                        )}
+                    </div>
+                )}
+
+                {activeTab === 'planner' && (
+                    <TripPlanner
+                        existingPlans={data.tripPlans || []}
+                        onSavePlan={(plan) => { const newData = LocationService.saveTripPlan(plan, data); onImport(JSON.stringify(newData)); }}
+                        onRemovePlan={(id) => { const newData = LocationService.removeTripPlan(id, data); onImport(JSON.stringify(newData)); }}
+                    />
+                )}
+
                 {activeTab === 'bucket' && (
                     <div className="space-y-4 animate-fade-in">
+                        {/* Upcoming Reminders */}
+                        {(() => {
+                            const reminders = LocationService.getUpcomingReminders(data); return (reminders.upcoming.length > 0 || reminders.overdue.length > 0) ? (
+                                <div className="glass p-4 rounded-2xl border-amber-500/10 mb-4">
+                                    <div className="flex items-center gap-2 mb-3"><Bell className="w-4 h-4 text-amber-400" /><p className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Reminders</p></div>
+                                    {reminders.overdue.map(c => <p key={c.id} className="text-[10px] text-red-400 font-bold mb-1">⚠️ {c.name} — target date passed ({new Date(c.targetDate).toLocaleDateString()})</p>)}
+                                    {reminders.upcoming.slice(0, 3).map(c => <p key={c.id} className="text-[10px] text-amber-300 font-bold mb-1">📅 {c.name} — {new Date(c.targetDate).toLocaleDateString()}</p>)}
+                                </div>
+                            ) : null;
+                        })()}
                         {data.bucketListCountries.map(country => (
                             <div key={country} className="flex items-center justify-between p-4 glass rounded-2xl border-purple-500/10 hover:border-purple-500/30">
                                 <p className="text-sm font-bold text-slate-200">{country}</p>
@@ -544,31 +613,58 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                             </div>
                         ))}
                         {data.bucketListCities.map(city => (
-                            <div key={city.id} className="flex items-center justify-between p-4 glass rounded-2xl border-purple-500/10 hover:border-purple-500/30">
-                                <div>
-                                    <p className="text-sm font-bold text-slate-200">{city.name}</p>
-                                    <p className="text-[10px] text-slate-500 uppercase font-black">{city.country}</p>
+                            <div key={city.id} className="glass p-4 rounded-2xl border-purple-500/10 hover:border-purple-500/30 space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <p className="text-sm font-bold text-slate-200">{city.name}</p>
+                                        <p className="text-[10px] text-slate-500 uppercase font-black">{city.country}{city.targetDate ? ` • Target: ${new Date(city.targetDate).toLocaleDateString()}` : ''}</p>
+                                    </div>
+                                    <div className="flex gap-1">
+                                        <button onClick={() => onAddCity(city)} className="p-2 text-slate-600 hover:text-amber-400"><MapPin className="w-5 h-5" /></button>
+                                        <button onClick={() => onRemoveBucketCity(city.id)} className="p-2 text-slate-600 hover:text-red-400"><Trash2 className="w-5 h-5" /></button>
+                                    </div>
                                 </div>
-                                <div className="flex gap-1">
-                                    <button onClick={() => onAddCity(city)} className="p-2 text-slate-600 hover:text-amber-400"><MapPin className="w-5 h-5" /></button>
-                                    <button onClick={() => onRemoveBucketCity(city.id)} className="p-2 text-slate-600 hover:text-red-400"><Trash2 className="w-5 h-5" /></button>
-                                </div>
+                                <input type="date" value={city.targetDate || ''} onChange={(e) => { const newData = LocationService.updateBucketCity(city.id, { targetDate: e.target.value }, data); onImport(JSON.stringify(newData)); }} className="bg-slate-800/50 rounded-lg px-3 py-1.5 text-[10px] text-slate-400 focus:outline-none w-full" placeholder="Set target date" />
                             </div>
                         ))}
+                        {data.bucketListCountries.length === 0 && data.bucketListCities.length === 0 && (
+                            <EmptyState icon={Compass} text="Bucket List Empty" sub="Shift+Click countries on the map to add them." />
+                        )}
                     </div>
                 )}
 
                 {activeTab === 'achievements' && (
-                    <div className="grid grid-cols-1 gap-4 animate-fade-in">
-                        {stats.achievements.map(ach => (
-                            <div key={ach.id} className="flex gap-4 p-5 glass rounded-[2rem] border-amber-500/10">
-                                <div className="w-16 h-16 rounded-[1.5rem] bg-amber-500/10 flex items-center justify-center text-3xl shrink-0">{ach.icon}</div>
-                                <div className="flex-1 pt-1">
-                                    <h4 className="text-amber-400 font-black text-sm uppercase mb-1">{ach.title}</h4>
-                                    <p className="text-xs text-slate-400 leading-relaxed">{ach.description}</p>
+                    <div className="space-y-6 animate-fade-in">
+                        <div className="glass p-4 rounded-2xl border-amber-500/10 text-center">
+                            <p className="text-3xl font-black text-amber-400">{stats.achievements.filter(a => a.earned).length}</p>
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Badges Earned</p>
+                        </div>
+                        <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] px-1">Earned</h3>
+                        <div className="grid grid-cols-1 gap-3">
+                            {stats.achievements.filter(a => a.earned).map(ach => (
+                                <div key={ach.id} className="flex gap-4 p-4 glass rounded-[2rem] border-amber-500/10">
+                                    <div className="w-14 h-14 rounded-[1.2rem] bg-amber-500/10 flex items-center justify-center text-2xl shrink-0">{ach.icon}</div>
+                                    <div className="flex-1 pt-1">
+                                        <h4 className="text-amber-400 font-black text-xs uppercase mb-0.5">{ach.title}</h4>
+                                        <p className="text-[10px] text-slate-400">{ach.description}</p>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
+                        {stats.achievements.some(a => !a.earned) && (
+                            <><h3 className="text-[10px] font-black text-slate-600 uppercase tracking-[0.2em] px-1 mt-6">Locked</h3>
+                                <div className="grid grid-cols-1 gap-3">
+                                    {stats.achievements.filter(a => !a.earned).map(ach => (
+                                        <div key={ach.id} className="flex gap-4 p-4 glass rounded-[2rem] border-white/5 opacity-40">
+                                            <div className="w-14 h-14 rounded-[1.2rem] bg-slate-800 flex items-center justify-center text-2xl shrink-0 grayscale">{ach.icon}</div>
+                                            <div className="flex-1 pt-1">
+                                                <h4 className="text-slate-500 font-black text-xs uppercase mb-0.5">{ach.title}</h4>
+                                                <p className="text-[10px] text-slate-600">{ach.description}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div></>
+                        )}
                     </div>
                 )}
 
@@ -609,22 +705,35 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                         </section>
 
                         <section className="space-y-3">
+                            <h3 className="text-xs font-black text-slate-600 uppercase tracking-widest mb-4">Weather & Overlays</h3>
+                            <div className="glass p-5 rounded-3xl border-white/5">
+                                <div className="flex items-center justify-between">
+                                    <div><p className="text-[10px] text-slate-300 font-black uppercase">Weather Overlay</p><p className="text-[8px] text-slate-600 font-bold uppercase">Show live weather on map</p></div>
+                                    <button onClick={() => onUpdateSettings({ weatherOverlay: !settings?.weatherOverlay })} className={`w-12 h-6 rounded-full transition-all relative ${settings?.weatherOverlay ? 'bg-blue-500' : 'bg-slate-800'}`}><div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${settings?.weatherOverlay ? 'left-7' : 'left-1'}`} /></button>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section className="space-y-3">
                             <h3 className="text-xs font-black text-slate-600 uppercase tracking-widest mb-4">Data Management</h3>
                             <button onClick={() => { const blob = new Blob([JSON.stringify(data)], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'travelmap-backup.json'; a.click(); }} className="w-full glass p-4 rounded-2xl border-white/5 flex items-center justify-between group">
-                                <div className="flex items-center gap-3">
-                                    <Download className="w-5 h-5 text-blue-400" />
-                                    <span className="text-[10px] font-black text-slate-200 uppercase">Export JSON Backup</span>
-                                </div>
+                                <div className="flex items-center gap-3"><Download className="w-5 h-5 text-blue-400" /><span className="text-[10px] font-black text-slate-200 uppercase">Export JSON Backup</span></div>
                                 <ChevronRight className="w-4 h-4 text-slate-600 group-hover:translate-x-1 transition-transform" />
                             </button>
                             <label className="w-full glass p-4 rounded-2xl border-white/5 flex items-center justify-between group cursor-pointer">
-                                <div className="flex items-center gap-3">
-                                    <Upload className="w-5 h-5 text-amber-400" />
-                                    <span className="text-[10px] font-black text-slate-200 uppercase">Import Data</span>
-                                </div>
+                                <div className="flex items-center gap-3"><Upload className="w-5 h-5 text-amber-400" /><span className="text-[10px] font-black text-slate-200 uppercase">Import JSON</span></div>
                                 <input type="file" className="hidden" accept=".json" onChange={(e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => onImport(ev.target.result); reader.readAsText(file); } }} />
                                 <ChevronRight className="w-4 h-4 text-slate-600 group-hover:translate-x-1 transition-transform" />
                             </label>
+                            <label className="w-full glass p-4 rounded-2xl border-white/5 flex items-center justify-between group cursor-pointer">
+                                <div className="flex items-center gap-3"><Upload className="w-5 h-5 text-green-400" /><span className="text-[10px] font-black text-slate-200 uppercase">Import GPX / KML</span></div>
+                                <input type="file" className="hidden" accept=".gpx,.kml" onChange={(e) => { const file = e.target.files[0]; if (file) { const reader = new FileReader(); reader.onload = (ev) => { const text = ev.target.result; const cities = file.name.endsWith('.kml') ? LocationService.parseKML(text) : LocationService.parseGPX(text); if (cities.length > 0) { const asJson = JSON.stringify({ visitedCities: cities, visitedCountries: [...new Set(cities.map(c => c.country))] }); onImport(asJson); } else { alert('No locations found in file.'); } }; reader.readAsText(file); } }} />
+                                <ChevronRight className="w-4 h-4 text-slate-600 group-hover:translate-x-1 transition-transform" />
+                            </label>
+                            <button onClick={() => { const html = LocationService.generateShareableHTML(data, stats); const blob = new Blob([html], { type: 'text/html' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'travel-profile.html'; a.click(); }} className="w-full glass p-4 rounded-2xl border-blue-500/10 flex items-center justify-between group">
+                                <div className="flex items-center gap-3"><Share2 className="w-5 h-5 text-blue-400" /><span className="text-[10px] font-black text-slate-200 uppercase">Generate Shareable Profile</span></div>
+                                <ChevronRight className="w-4 h-4 text-slate-600 group-hover:translate-x-1 transition-transform" />
+                            </button>
                         </section>
                     </div>
                 )}
@@ -633,6 +742,17 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
             {/* Decor */}
             <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 blur-[120px] pointer-events-none" />
             <div className="absolute bottom-0 left-0 w-64 h-64 bg-amber-500/5 blur-[120px] pointer-events-none" />
+
+            {/* Photo Lightbox */}
+            {lightbox.open && (
+                <PhotoLightbox
+                    photos={lightbox.photos}
+                    currentIndex={lightbox.index}
+                    cityName={lightbox.cityName}
+                    onClose={() => setLightbox({ ...lightbox, open: false })}
+                    onNavigate={(idx) => setLightbox({ ...lightbox, index: idx })}
+                />
+            )}
         </div>
     );
 };

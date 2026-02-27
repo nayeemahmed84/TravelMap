@@ -34,6 +34,24 @@ const COUNTRY_MAP = {
     'Yemen': 'ye', 'Zambia': 'zm', 'Zimbabwe': 'zw'
 };
 
+const COUNTRY_CURRENCY_MAP = {
+    'United States': 'USD', 'United Kingdom': 'GBP', 'Germany': 'EUR', 'France': 'EUR', 'Italy': 'EUR', 'Spain': 'EUR',
+    'Netherlands': 'EUR', 'Belgium': 'EUR', 'Portugal': 'EUR', 'Greece': 'EUR', 'Austria': 'EUR', 'Ireland': 'EUR',
+    'India': 'INR', 'Japan': 'JPY', 'Canada': 'CAD', 'Australia': 'AUD', 'Bangladesh': 'BDT', 'Pakistan': 'PKR',
+    'Turkey': 'TRY', 'China': 'CNY', 'Brazil': 'BRL', 'Russia': 'RUB', 'Mexico': 'MXN', 'South Korea': 'KRW',
+    'Singapore': 'SGD', 'Switzerland': 'CHF', 'Norway': 'NOK', 'Sweden': 'SEK', 'Denmark': 'DKK', 'Poland': 'PLN',
+    'New Zealand': 'NZD', 'South Africa': 'ZAR', 'United Arab Emirates': 'AED', 'Saudi Arabia': 'SAR', 'Malaysia': 'MYR',
+    'Thailand': 'THB', 'Indonesia': 'IDR', 'Vietnam': 'VND', 'Philippines': 'PHP', 'Israel': 'ILS', 'Egypt': 'EGP'
+};
+
+const CODE_CURRENCY_MAP = {
+    'us': 'USD', 'gb': 'GBP', 'ca': 'CAD', 'au': 'AUD', 'nz': 'NZD', 'in': 'INR', 'jp': 'JPY', 'cn': 'CNY',
+    'de': 'EUR', 'fr': 'EUR', 'it': 'EUR', 'es': 'EUR', 'nl': 'EUR', 'be': 'EUR', 'at': 'EUR', 'ie': 'EUR',
+    'no': 'NOK', 'se': 'SEK', 'dk': 'DKK', 'ch': 'CHF', 'pl': 'PLN', 'tr': 'TRY', 'br': 'BRL', 'ru': 'RUB',
+    'mx': 'MXN', 'kr': 'KRW', 'sg': 'SGD', 'za': 'ZAR', 'ae': 'AED', 'sa': 'SAR', 'my': 'MYR', 'th': 'THB',
+    'id': 'IDR', 'vn': 'VND', 'ph': 'PHP', 'il': 'ILS', 'eg': 'EGP', 'bd': 'BDT', 'pk': 'PKR'
+};
+
 export const CountryService = {
     getFlagUrl: (countryName) => {
         const code = COUNTRY_MAP[countryName];
@@ -42,5 +60,17 @@ export const CountryService = {
     },
     getCountryCode: (countryName) => {
         return COUNTRY_MAP[countryName] || null;
+    },
+    getCurrency: (countryName, countryCode) => {
+        if (countryCode && CODE_CURRENCY_MAP[countryCode.toLowerCase()]) {
+            return CODE_CURRENCY_MAP[countryCode.toLowerCase()];
+        }
+        return COUNTRY_CURRENCY_MAP[countryName] || 'USD';
+    },
+    getAllCountries: () => {
+        return Object.keys(COUNTRY_MAP).sort().map(name => ({
+            name,
+            code: COUNTRY_MAP[name]
+        }));
     }
 };

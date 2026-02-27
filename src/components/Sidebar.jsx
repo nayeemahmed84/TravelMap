@@ -15,6 +15,11 @@ import { CONTINENTS, LocationService } from '../utils/LocationService';
 import { CountryService } from '../utils/CountryService';
 import TripPlanner from './TripPlanner';
 import PhotoLightbox from './PhotoLightbox';
+import TravelCalendarHeatmap from './TravelCalendarHeatmap';
+import TravelComparison from './TravelComparison';
+import AnimatedBackground from './AnimatedBackground';
+import { VisaService } from '../utils/VisaService';
+import { CurrencyService } from '../utils/CurrencyService';
 
 const PRESET_TAGS = ['Solo', 'Family', 'Business', 'Adventure', 'Foodie', 'Culture', 'Beach', 'City Break', 'Road Trip', 'Backpacking'];
 
@@ -51,8 +56,21 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
     const [filterCountry, setFilterCountry] = useState('all');
     const [searchText, setSearchText] = useState('');
     const [displayMode, setDisplayMode] = useState('list');
-    const [lightbox, setLightbox] = useState({ open: false, photos: [], index: 0, cityName: '' });
     const [journalExpanded, setJournalExpanded] = useState(null);
+    const [isSidebarCompact, setIsSidebarCompact] = useState(false);
+    const [homeSearch, setHomeSearch] = useState('');
+    const [homeSuggestions, setHomeSuggestions] = useState([]);
+    const [isSearchingHome, setIsSearchingHome] = useState(false);
+    const [friendData, setFriendData] = useState(null);
+    const [currencyBase, setCurrencyBase] = useState('USD');
+    const [exchangeRates, setExchangeRates] = useState(null);
+    const [lightbox, setLightbox] = useState({ open: false, photos: [], index: 0, cityName: '' });
+
+    React.useEffect(() => {
+        const base = settings?.preferredCurrency || 'USD';
+        setCurrencyBase(base);
+        CurrencyService.getRates(base).then(rates => setExchangeRates(rates));
+    }, [settings?.preferredCurrency]);
 
     const statsRef = useRef(null);
 
@@ -65,13 +83,45 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
 
         setIsSearching(true);
         try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${val}&limit=5`);
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${val}&limit=10&addressdetails=1`);
             const results = await res.json();
-            setSuggestions(results);
+
+            // Filter for settlements and administrative areas
+            const filtered = results.filter(loc => {
+                const type = loc.type || loc.addresstype;
+                const cityTypes = ['city', 'town', 'village', 'hamlet', 'municipality', 'administrative', 'state', 'country'];
+                return cityTypes.includes(type) || loc.class === 'place';
+            }).slice(0, 5);
+
+            setSuggestions(filtered);
         } catch (err) {
             console.error('Search error:', err);
         } finally {
             setIsSearching(false);
+        }
+    };
+
+    const handleHomeSearch = async (val) => {
+        setHomeSearch(val);
+        if (val.length < 3) {
+            setHomeSuggestions([]);
+            return;
+        }
+
+        setIsSearchingHome(true);
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${val}&limit=10&addressdetails=1`);
+            const results = await res.json();
+            const filtered = results.filter(loc => {
+                const type = loc.type || loc.addresstype;
+                const cityTypes = ['city', 'town', 'village', 'hamlet', 'municipality', 'administrative', 'state', 'country'];
+                return cityTypes.includes(type) || loc.class === 'place';
+            }).slice(0, 5);
+            setHomeSuggestions(filtered);
+        } catch (err) {
+            console.error('Home search error:', err);
+        } finally {
+            setIsSearchingHome(false);
         }
     };
 
@@ -165,29 +215,36 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
     };
 
     return (
-        <div className="w-[450px] h-full glass border-r border-white/10 flex flex-col z-[1001] animate-fade-in relative">
+        <div className={`${isSidebarCompact ? 'w-[80px]' : 'w-[450px]'} h-screen glass border-r border-white/10 flex flex-col z-[1001] animate-fade-in relative transition-all duration-500 overflow-hidden`}>
+            <AnimatedBackground />
             {/* Header */}
             <div className="p-8 pb-4">
-                <div className="flex items-center justify-between mb-8 group">
-                    <div className="flex items-center gap-4">
-                        <div className="relative w-12 h-12 flex items-center justify-center">
-                            <div className="absolute inset-0 bg-blue-500/20 rounded-2xl blur-xl group-hover:bg-blue-500/40 transition-all duration-500"></div>
-                            <div className="relative w-12 h-12 bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl border border-white/10 flex items-center justify-center shadow-2xl group-hover:scale-110 transition-transform duration-500">
-                                <Globe className="w-6 h-6 text-blue-400 animate-pulse-slow" />
-                                <div className="absolute -top-1 -right-1 w-3 h-3 bg-amber-400 rounded-full border-2 border-slate-900 shadow-[0_0_10px_rgba(251,191,36,0.6)]"></div>
-                            </div>
-                        </div>
-                        <div>
-                            <h1 className="text-2xl font-black tracking-tight leading-none text-white drop-shadow-sm">
-                                <span className="bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Travel</span>
-                                <span className="bg-gradient-to-r from-blue-400 to-amber-400 bg-clip-text text-transparent">Map</span>
-                            </h1>
-                            <p className="text-[9px] font-bold text-slate-500 uppercase tracking-[0.3em] mt-1 group-hover:text-blue-400 transition-colors">
-                                World Explorer
-                            </p>
+                <div className={`flex items-center gap-4 ${isSidebarCompact ? 'hidden' : 'flex'}`}>
+                    <div className="relative w-12 h-12 flex items-center justify-center">
+                        <div className="absolute inset-0 bg-blue-500/20 rounded-2xl blur-xl group-hover:bg-blue-500/40 transition-all duration-500"></div>
+                        <div className="relative w-12 h-12 bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl border border-white/10 flex items-center justify-center shadow-2xl group-hover:scale-110 transition-transform duration-500">
+                            <Globe className="w-6 h-6 text-blue-400 animate-pulse-slow" />
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-amber-400 rounded-full border-2 border-slate-900 shadow-[0_0_10px_rgba(251,191,36,0.6)]"></div>
                         </div>
                     </div>
+                    <div>
+                        <h1 className="text-2xl font-black tracking-tight leading-none text-white drop-shadow-sm">
+                            <span className="bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Travel</span>
+                            <span className="bg-gradient-to-r from-blue-400 to-amber-400 bg-clip-text text-transparent">Map</span>
+                        </h1>
+                        <p className="text-[9px] font-bold text-slate-500 uppercase tracking-[0.3em] mt-1 group-hover:text-blue-400 transition-colors">
+                            World Explorer
+                        </p>
+                    </div>
+                </div>
 
+                <div className="flex gap-2">
+                    <button
+                        onClick={() => setIsSidebarCompact(!isSidebarCompact)}
+                        className="p-2.5 rounded-xl border border-white/5 text-slate-500 hover:text-white hover:bg-white/5 transition-all"
+                    >
+                        <Monitor className="w-5 h-5" />
+                    </button>
                     <button
                         onClick={() => setActiveTab('settings')}
                         className={`p-2.5 rounded-xl transition-all duration-300 border border-transparent hover:border-white/10 ${activeTab === 'settings' ? 'bg-blue-500/20 text-blue-400 border-blue-500/20' : 'text-slate-500 hover:text-white hover:bg-white/5'}`}
@@ -197,7 +254,7 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                 </div>
 
                 {/* Search */}
-                <div className="relative mt-6">
+                <div className={`relative mt-6 ${isSidebarCompact ? 'hidden' : 'block'}`}>
                     <div className="relative">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                         <input
@@ -215,14 +272,18 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                     {suggestions.length > 0 && (
                         <div className="absolute top-full left-0 w-full mt-3 glass rounded-2xl border border-white/10 overflow-hidden shadow-2xl z-50 animate-fade-in divide-y divide-white/5">
                             {suggestions.map((loc) => (
-                                <div key={loc.place_id} className="flex hover:bg-white/5 transition-colors group">
-                                    <div className="flex-1 px-5 py-4 min-w-0">
-                                        <p className="font-bold text-slate-200 truncate">{loc.display_name}</p>
-                                        <p className="text-[10px] text-slate-500 mt-0.5 uppercase tracking-tighter">Choose action</p>
+                                <div key={loc.place_id} className="flex hover:bg-slate-800/90 transition-all group cursor-pointer border-l-2 border-transparent hover:border-blue-500">
+                                    <div className="flex-1 px-5 py-3 min-w-0" onClick={() => selectLocation(loc)}>
+                                        <p className="font-bold text-white group-hover:text-blue-400 transition-colors truncate">
+                                            {loc.address.city || loc.address.town || loc.address.village || loc.address.municipality || loc.display_name.split(',')[0]}
+                                        </p>
+                                        <p className="text-[10px] text-slate-400 mt-0.5 uppercase tracking-wider truncate">
+                                            {loc.address.state ? `${loc.address.state}, ` : ''}{loc.address.country}
+                                        </p>
                                     </div>
                                     <div className="flex shrink-0">
-                                        <button onClick={() => selectLocation(loc)} className="px-4 border-l border-white/5 hover:bg-blue-500/20 text-blue-400"><MapPin className="w-4 h-4" /></button>
-                                        <button onClick={() => selectLocation(loc, 'bucket')} className="px-4 border-l border-white/5 hover:bg-purple-500/20 text-purple-400"><Compass className="w-4 h-4" /></button>
+                                        <button onClick={(e) => { e.stopPropagation(); selectLocation(loc); }} className="px-4 border-l border-white/5 hover:bg-blue-500/20 text-blue-400 transition-colors" title="Add to Visited"><MapPin className="w-4 h-4" /></button>
+                                        <button onClick={(e) => { e.stopPropagation(); selectLocation(loc, 'bucket'); }} className="px-4 border-l border-white/5 hover:bg-purple-500/20 text-purple-400 transition-colors" title="Add to Bucket List"><Compass className="w-4 h-4" /></button>
                                     </div>
                                 </div>
                             ))}
@@ -232,11 +293,13 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
             </div>
 
             {/* Tabs */}
-            <div className="flex px-8 gap-4 border-b border-white/5 mb-6 overflow-x-auto no-scrollbar">
+            <div className={`flex px-8 gap-4 border-b border-white/5 mb-6 overflow-x-auto no-scrollbar ${isSidebarCompact ? 'flex-col px-4 items-center gap-6 py-6 border-b-0 border-r border-white/5 h-full overflow-y-auto' : ''}`}>
                 {[
                     { id: 'stats', label: 'Stats', icon: TrendingUp },
                     { id: 'countries', label: 'Countries', icon: Globe },
                     { id: 'cities', label: 'Cities', icon: BookOpen },
+                    { id: 'analytics', label: 'Data', icon: Zap },
+                    { id: 'compare', label: 'Match', icon: Share2 },
                     { id: 'journal', label: 'Journal', icon: FileText },
                     { id: 'gallery', label: 'Gallery', icon: ImageIcon },
                     { id: 'planner', label: 'Planner', icon: Route },
@@ -247,19 +310,20 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                     <button
                         key={tab.id}
                         onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center gap-2 py-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 shrink-0 ${activeTab === tab.id
+                        className={`flex items-center gap-2 py-3 text-[10px] font-bold uppercase tracking-widest transition-all border-b-2 shrink-0 ${isSidebarCompact ? 'border-b-0 border-r-2 py-0 px-2' : ''} ${activeTab === tab.id
                             ? 'text-blue-400 border-blue-500'
                             : 'text-slate-500 border-transparent hover:text-slate-300'
                             }`}
+                        title={tab.label}
                     >
-                        <tab.icon className="w-3.5 h-3.5" />
-                        {tab.label}
+                        <tab.icon className="w-4 h-4" />
+                        {!isSidebarCompact && tab.label}
                     </button>
                 ))}
             </div>
 
             {/* Content Area */}
-            <div className="flex-1 overflow-y-auto px-8 pb-8 custom-scrollbar">
+            <div className={`flex-1 overflow-y-auto px-8 pb-8 custom-scrollbar ${isSidebarCompact ? 'hidden' : 'block'}`}>
                 {activeTab === 'stats' && (
                     <div className="space-y-8 animate-fade-in">
                         <div ref={statsRef} data-capture-area className="p-8 rounded-[2.5rem] bg-slate-950 border border-white/5 relative overflow-hidden shadow-2xl">
@@ -308,8 +372,37 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                                         </div>
                                     ))}
                                 </section>
+
+                                {/* New Stats Round 2 */}
+                                <div className="grid grid-cols-2 gap-4 mt-8">
+                                    <div className="p-4 glass rounded-3xl border-white/5">
+                                        <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-1"><Zap className="w-3 h-3 text-amber-400" /> Travel Streak</p>
+                                        <p className="text-xl font-black text-white">{stats.streaks?.current} months</p>
+                                        <p className="text-[7px] font-bold text-slate-600 uppercase mt-1">Best: {stats.streaks?.longest}</p>
+                                    </div>
+                                    <div className="p-4 glass rounded-3xl border-white/5">
+                                        <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-1 flex items-center gap-1"><Sun className="w-3 h-3 text-green-400" /> Carbon Offset</p>
+                                        <p className="text-xl font-black text-white">{stats.carbonFootprint?.tonnes}t CO₂</p>
+                                        <p className="text-[7px] font-bold text-slate-600 uppercase mt-1">Plant {stats.carbonFootprint?.treesNeeded} trees</p>
+                                    </div>
+                                </div>
+
+                                <div className="mt-8 space-y-4">
+                                    <h3 className="text-[9px] font-black text-slate-600 uppercase tracking-[0.2em] px-1">Top Destinations</h3>
+                                    <div className="space-y-2">
+                                        {stats.mostVisited?.topCountries.map((c, i) => (
+                                            <div key={i} className="flex items-center justify-between p-3 bg-white/5 rounded-2xl border border-white/5">
+                                                <span className="text-xs font-bold text-slate-300">{c.name}</span>
+                                                <span className="text-[10px] font-black text-blue-500">{c.count} {c.count === 1 ? 'visit' : 'visits'}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         </div>
+
+                        {/* Calendar Heatmap */}
+                        <TravelCalendarHeatmap data={stats.calendarHeatmap || {}} />
                         <div className="grid grid-cols-2 gap-4">
                             <button
                                 onClick={() => onShowWrapped(new Date().getFullYear())}
@@ -321,6 +414,52 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                                 <Share2 className="w-4 h-4 group-hover:scale-110" /> Export Stats Card
                             </button>
                         </div>
+                    </div>
+                )}
+
+                {activeTab === 'analytics' && (
+                    <div className="space-y-8 animate-fade-in">
+                        <div className="glass p-8 rounded-[2.5rem] bg-slate-950 border border-white/5">
+                            <h3 className="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em] mb-6">Trip Comparison Analytics</h3>
+                            {(() => {
+                                const trips = stats.trips || [];
+                                const tripComparison = LocationService.compareTrips(trips);
+                                if (!tripComparison) return <p className="text-xs text-slate-500 text-center italic">Add more trips to see comparative data.</p>;
+                                return (
+                                    <div className="space-y-6">
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-end">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase">Most Expensive</span>
+                                                <span className="text-xs font-black text-amber-500">${tripComparison.mostExpensive.totalCost}</span>
+                                            </div>
+                                            <p className="text-[11px] font-black text-white">{tripComparison.mostExpensive.name}</p>
+                                        </div>
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-end">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase">Longest Duration</span>
+                                                <span className="text-xs font-black text-blue-400">
+                                                    {Math.ceil((new Date(tripComparison.longestDuration.endDate) - new Date(tripComparison.longestDuration.startDate)) / 86400000)} days
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] font-black text-white">{tripComparison.longestDuration.name}</p>
+                                        </div>
+                                        <div className="space-y-4">
+                                            <div className="flex justify-between items-end">
+                                                <span className="text-[10px] font-bold text-slate-400 uppercase">Most Urban</span>
+                                                <span className="text-xs font-black text-purple-400">{tripComparison.mostCities.cities.length} cities</span>
+                                            </div>
+                                            <p className="text-[11px] font-black text-white">{tripComparison.mostCities.name}</p>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'compare' && (
+                    <div className="h-full animate-fade-in pb-12">
+                        <TravelComparison myData={data} onImportFriend={(d) => setFriendData(d)} />
                     </div>
                 )}
 
@@ -425,9 +564,34 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                                                         <div className="grid grid-cols-2 gap-2">
                                                             <input type="text" placeholder="Photo URL" value={editValues.photo} onChange={(e) => setEditValues({ ...editValues, photo: e.target.value })} className="bg-slate-800/50 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none" />
                                                             <input type="number" placeholder="Budget ($)" value={editValues.cost} onChange={(e) => setEditValues({ ...editValues, cost: e.target.value })} className="bg-slate-800/50 rounded-xl px-3 py-2 text-xs text-slate-300 focus:outline-none" />
+                                                            <div className="flex items-center gap-1 bg-slate-800/50 rounded-xl px-3 py-2">
+                                                                <span className="text-[8px] font-black text-slate-500 uppercase">Local</span>
+                                                                <span className="text-[10px] text-blue-400 font-bold">
+                                                                    {exchangeRates && editValues.cost ? `${(editValues.cost * (exchangeRates[settings?.preferredCurrency || 'USD'] || 1)).toFixed(0)} ${settings?.preferredCurrency || 'USD'}` : '--'}
+                                                                </span>
+                                                            </div>
                                                         </div>
                                                         <div><label className="text-[8px] font-black text-slate-500 uppercase mb-1 block">Tags</label><div className="flex flex-wrap gap-1">{PRESET_TAGS.map(tag => (<button key={tag} onClick={() => { const tags = editValues.tags || []; setEditValues({ ...editValues, tags: tags.includes(tag) ? tags.filter(t => t !== tag) : [...tags, tag] }); }} className={`px-2 py-1 rounded-lg text-[8px] font-bold transition-all ${(editValues.tags || []).includes(tag) ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-white/5 text-slate-500 border border-white/5 hover:text-white'}`}>{tag}</button>))}</div></div>
                                                         <textarea placeholder="Quick notes..." value={editValues.notes} onChange={(e) => setEditValues({ ...editValues, notes: e.target.value })} className="w-full bg-slate-800/50 rounded-xl p-3 text-xs text-slate-300 focus:outline-none min-h-[60px]" />
+
+                                                        <div className="space-y-2 bg-white/5 p-3 rounded-2xl border border-white/5">
+                                                            <div className="flex justify-between items-center mb-1">
+                                                                <label className="text-[8px] font-black text-slate-500 uppercase">Custom Pin Emoji</label>
+                                                                <span className="text-xl">{editValues.customEmoji || '📍'}</span>
+                                                            </div>
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {['📍', '✈️', '🏝️', '🏙️', '🏔️', '🏛️', '🎭', '🍱', '🎒', '📸', '🏠', '🚉'].map(emoji => (
+                                                                    <button
+                                                                        key={emoji}
+                                                                        onClick={() => setEditValues({ ...editValues, customEmoji: emoji })}
+                                                                        className={`w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white/10 transition-all ${editValues.customEmoji === emoji ? 'bg-blue-500/20 ring-1 ring-blue-500/50' : ''}`}
+                                                                    >
+                                                                        {emoji}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+
                                                         <textarea placeholder="Travel journal entry..." value={editValues.journal} onChange={(e) => setEditValues({ ...editValues, journal: e.target.value })} className="w-full bg-slate-800/50 rounded-xl p-3 text-xs text-slate-300 focus:outline-none min-h-[80px] border border-amber-500/10" />
                                                         <div className="flex gap-2">
                                                             <button onClick={() => saveEdit(city.id)} className="flex-1 bg-blue-600 font-bold py-2 rounded-xl text-xs">Save</button>
@@ -610,6 +774,17 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                                     <button onClick={() => onToggleCountry(country)} className="p-2 text-slate-600 hover:text-amber-400"><CheckCircle2 className="w-5 h-5" /></button>
                                     <button onClick={() => onToggleBucketList(country)} className="p-2 text-slate-600 hover:text-red-400"><Trash2 className="w-5 h-5" /></button>
                                 </div>
+                                <div className="mt-2 flex items-center gap-2 px-1">
+                                    {(() => {
+                                        const visa = VisaService.getRequirements(settings?.nationality || 'US', country);
+                                        return (
+                                            <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${visa.color === 'green' ? 'bg-green-500/10 border-green-500/20 text-green-400' : visa.color === 'amber' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+                                                <span className="text-[10px]">{visa.icon}</span>
+                                                <span className="text-[8px] font-black uppercase tracking-widest">{visa.type}</span>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
                             </div>
                         ))}
                         {data.bucketListCities.map(city => (
@@ -670,6 +845,109 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
 
                 {activeTab === 'settings' && (
                     <div className="space-y-8 animate-fade-in">
+                        <section>
+                            <h3 className="text-xs font-black text-slate-600 uppercase tracking-widest mb-4">Personal Profile</h3>
+                            <div className="glass p-5 rounded-3xl border-white/5 space-y-6">
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="text-[10px] text-slate-500 font-black uppercase mb-2 block">Home Base</label>
+                                        <div className="relative">
+                                            <div className="relative">
+                                                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500" />
+                                                <input
+                                                    type="text"
+                                                    value={homeSearch}
+                                                    placeholder={settings?.homeCity?.name || "Search your home city..."}
+                                                    onChange={(e) => handleHomeSearch(e.target.value)}
+                                                    className="w-full bg-slate-900/50 border border-white/5 rounded-xl py-3 pl-10 pr-4 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500/30"
+                                                />
+                                            </div>
+                                            {homeSearch.length >= 3 && homeSuggestions.length > 0 && (
+                                                <div className="absolute top-full left-0 w-full mt-2 glass rounded-xl border border-white/10 overflow-hidden shadow-2xl z-50 animate-fade-in divide-y divide-white/5">
+                                                    {homeSuggestions.map((loc) => (
+                                                        <button
+                                                            key={loc.place_id}
+                                                            onClick={() => {
+                                                                const cityCountry = loc.address.country?.trim();
+                                                                const cityCode = loc.address.country_code?.trim();
+                                                                const autoCurrency = CountryService.getCurrency(cityCountry, cityCode);
+
+                                                                onUpdateSettings({
+                                                                    homeCity: {
+                                                                        name: loc.address.city || loc.address.town || loc.address.village || loc.address.municipality || loc.display_name.split(',')[0],
+                                                                        lat: parseFloat(loc.lat),
+                                                                        lng: parseFloat(loc.lon)
+                                                                    },
+                                                                    preferredCurrency: autoCurrency,
+                                                                    nationality: cityCode?.toUpperCase() || settings?.nationality
+                                                                });
+
+                                                                // Explicitly trigger currency update
+                                                                setCurrencyBase(autoCurrency);
+                                                                CurrencyService.getRates(autoCurrency).then(rates => setExchangeRates(rates));
+
+                                                                setHomeSearch('');
+                                                                setHomeSuggestions([]);
+                                                            }}
+                                                            className="w-full text-left px-4 py-3 hover:bg-slate-800 transition-colors border-l-2 border-transparent hover:border-blue-500"
+                                                        >
+                                                            <div className="flex flex-col">
+                                                                <span className="text-white font-bold">
+                                                                    {loc.address.city || loc.address.town || loc.address.village || loc.address.municipality || loc.display_name.split(',')[0]}
+                                                                </span>
+                                                                <span className="text-[9px] text-slate-500 uppercase tracking-wider font-semibold">
+                                                                    {loc.address.state ? `${loc.address.state}, ` : ''}{loc.address.country}
+                                                                </span>
+                                                            </div>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                        {settings?.homeCity && (
+                                            <p className="mt-2 text-[9px] text-blue-400 font-bold uppercase tracking-wider px-1">
+                                                Current: {settings.homeCity.name}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-[10px] text-slate-500 font-black uppercase mb-2 block">Passport</label>
+                                            <select
+                                                value={settings?.nationality || 'US'}
+                                                onChange={(e) => onUpdateSettings({ nationality: e.target.value })}
+                                                className="w-full bg-slate-900/50 border border-white/5 rounded-xl px-3 py-3 text-xs text-white focus:outline-none max-h-48"
+                                            >
+                                                {CountryService.getAllCountries().map(c => (
+                                                    <option key={c.code} value={c.code.toUpperCase()}>
+                                                        {c.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] text-slate-500 font-black uppercase mb-2 block">Currency</label>
+                                            <select
+                                                value={settings?.preferredCurrency || 'USD'}
+                                                onChange={(e) => {
+                                                    onUpdateSettings({ preferredCurrency: e.target.value });
+                                                    setCurrencyBase(e.target.value);
+                                                }}
+                                                className="w-full bg-slate-900/50 border border-white/5 rounded-xl px-3 py-3 text-xs text-white focus:outline-none"
+                                            >
+                                                <option value="USD">💵 USD ($)</option>
+                                                <option value="EUR">💶 EUR (€)</option>
+                                                <option value="GBP">💷 GBP (£)</option>
+                                                <option value="JPY">💴 JPY (¥)</option>
+                                                <option value="INR">🇮🇳 INR (₹)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
                         <section>
                             <h3 className="text-xs font-black text-slate-600 uppercase tracking-widest mb-4">Map Appearance</h3>
                             <div className="glass p-5 rounded-3xl border-white/5 space-y-6">
@@ -736,24 +1014,27 @@ const Sidebar = ({ data, stats, settings, onAddCity, onAddBucketCity, onUpdateCi
                             </button>
                         </section>
                     </div>
-                )}
-            </div>
+                )
+                }
+            </div >
 
             {/* Decor */}
-            <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 blur-[120px] pointer-events-none" />
+            < div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 blur-[120px] pointer-events-none" />
             <div className="absolute bottom-0 left-0 w-64 h-64 bg-amber-500/5 blur-[120px] pointer-events-none" />
 
             {/* Photo Lightbox */}
-            {lightbox.open && (
-                <PhotoLightbox
-                    photos={lightbox.photos}
-                    currentIndex={lightbox.index}
-                    cityName={lightbox.cityName}
-                    onClose={() => setLightbox({ ...lightbox, open: false })}
-                    onNavigate={(idx) => setLightbox({ ...lightbox, index: idx })}
-                />
-            )}
-        </div>
+            {
+                lightbox.open && (
+                    <PhotoLightbox
+                        photos={lightbox.photos}
+                        currentIndex={lightbox.index}
+                        cityName={lightbox.cityName}
+                        onClose={() => setLightbox({ ...lightbox, open: false })}
+                        onNavigate={(idx) => setLightbox({ ...lightbox, index: idx })}
+                    />
+                )
+            }
+        </div >
     );
 };
 

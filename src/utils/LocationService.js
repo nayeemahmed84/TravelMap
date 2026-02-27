@@ -32,7 +32,10 @@ export const LocationService = {
                 showHeatmap: false,
                 theme: 'dark',
                 weatherOverlay: false,
-                autoDayNight: false
+                autoDayNight: false,
+                homeCity: null,
+                nationality: 'US',
+                preferredCurrency: 'USD'
             },
             passportStamps: [],
             tripPlans: []
@@ -99,6 +102,12 @@ export const LocationService = {
         // Budget totals
         const totalBudget = LocationService.calculateTotalBudget(data.visitedCities);
 
+        // Round 2 analytical stats
+        const streaks = LocationService.calculateStreak(sorted);
+        const carbonFootprint = LocationService.calculateCarbonFootprint(totalDistance);
+        const calendarHeatmap = LocationService.buildCalendarHeatmap(sorted);
+        const mostVisited = LocationService.getMostVisited(data.visitedCities, data.visitedCountries);
+
         return {
             visitedCount,
             totalCount: TOTAL_COUNTRIES,
@@ -107,7 +116,11 @@ export const LocationService = {
             achievements,
             continentStats,
             trips,
-            totalBudget
+            totalBudget,
+            streaks,
+            carbonFootprint,
+            calendarHeatmap,
+            mostVisited
         };
     },
 
@@ -754,5 +767,120 @@ export const LocationService = {
         const newData = { ...currentData, bucketListCities };
         LocationService.saveData(newData);
         return newData;
+    },
+
+    // ═══════════════════════════════════════════
+    // ANALYTICAL & COMPARATIVE FUNCTIONS (ROUND 2)
+    // ═══════════════════════════════════════════
+    calculateStreak: (cities) => {
+        if (!cities.length) return { current: 0, longest: 0 };
+
+        const tripMonths = [...new Set(cities.map(c => {
+            const date = new Date(c.date);
+            return `${date.getFullYear()}-${date.getMonth()}`;
+        }))].sort();
+
+        let longest = 0;
+        let current = 0;
+        let tempStreak = 0;
+
+        for (let i = 0; i < tripMonths.length; i++) {
+            if (i === 0) {
+                tempStreak = 1;
+            } else {
+                const prev = tripMonths[i - 1].split('-').map(Number);
+                const curr = tripMonths[i].split('-').map(Number);
+                const isConsecutive = (curr[0] === prev[0] && curr[1] === prev[1] + 1) ||
+                    (curr[0] === prev[0] + 1 && curr[1] === 0 && prev[1] === 11);
+
+                if (isConsecutive) {
+                    tempStreak++;
+                } else {
+                    tempStreak = 1;
+                }
+            }
+            longest = Math.max(longest, tempStreak);
+        }
+
+        // Calculate current streak
+        const now = new Date();
+        const lastTripMonth = tripMonths[tripMonths.length - 1].split('-').map(Number);
+        const isLastMonthRecent = (now.getFullYear() === lastTripMonth[0] && now.getMonth() <= lastTripMonth[1] + 1) ||
+            (now.getFullYear() === lastTripMonth[0] + 1 && now.getMonth() === 0 && lastTripMonth[1] === 11);
+
+        if (isLastMonthRecent) {
+            current = tempStreak;
+        } else {
+            current = 0;
+        }
+
+        return { current, longest };
+    },
+
+    calculateCarbonFootprint: (distanceKM) => {
+        // Avg 0.115 kg CO2 per km for medium haul flights
+        const kgCO2 = distanceKM * 0.115;
+        return {
+            kg: Math.round(kgCO2),
+            tonnes: (kgCO2 / 1000).toFixed(2),
+            treesNeeded: Math.ceil(kgCO2 / 21) // 21kg CO2 absorbed by one tree per year
+        };
+    },
+
+    buildCalendarHeatmap: (cities) => {
+        const heatmap = {};
+        cities.forEach(c => {
+            heatmap[c.date] = (heatmap[c.date] || 0) + 1;
+        });
+        return heatmap;
+    },
+
+    getMostVisited: (cities, countries) => {
+        const cityCounts = {};
+        cities.forEach(c => cityCounts[c.name] = (cityCounts[c.name] || 0) + 1);
+
+        const countryCounts = {};
+        cities.forEach(c => countryCounts[c.country] = (countryCounts[c.country] || 0) + 1);
+
+        const topCities = Object.entries(cityCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([name, count]) => ({ name, count }));
+
+        const topCountries = Object.entries(countryCounts)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([name, count]) => ({ name, count }));
+
+        return { topCities, topCountries };
+    },
+
+    compareTravelData: (myData, friendData) => {
+        const myCountries = new Set(myData.visitedCountries);
+        const friendCountries = new Set(friendData.visitedCountries);
+
+        const shared = [...myCountries].filter(c => friendCountries.has(c));
+        const uniqueToMe = [...myCountries].filter(c => !friendCountries.has(c));
+        const uniqueToFriend = [...friendCountries].filter(c => !myCountries.has(c));
+
+        return {
+            shared,
+            uniqueToMe,
+            uniqueToFriend,
+            compatibility: Math.round((shared.length / Math.max(1, myCountries.size + friendCountries.size - shared.length)) * 100)
+        };
+    },
+
+    compareTrips: (trips) => {
+        if (!trips.length) return null;
+        return {
+            mostExpensive: [...trips].sort((a, b) => b.totalCost - a.totalCost)[0],
+            longestDuration: [...trips].sort((a, b) => {
+                const durA = new Date(a.endDate) - new Date(a.startDate);
+                const durB = new Date(b.endDate) - new Date(b.startDate);
+                return durB - durA;
+            })[0],
+            mostCities: [...trips].sort((a, b) => b.cities.length - a.cities.length)[0]
+        };
     }
 };

@@ -2,8 +2,11 @@ import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { MapContainer, TileLayer, GeoJSON, Marker, Popup, Polyline, useMap, CircleMarker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { LocationService } from '../utils/LocationService';
+import { LocationService, CONTINENTS } from '../utils/LocationService';
 import FlightAnimationOverlay from './FlightAnimation';
+import DistanceRings from './DistanceRings';
+import GlobeView from './GlobeView';
+import TimeLapseControls from './TimeLapseControls';
 
 // Fix for default marker icon issues
 import icon from 'leaflet/dist/images/marker-icon.png';
@@ -18,6 +21,16 @@ let DefaultIcon = L.icon({
 L.Marker.prototype.options.icon = DefaultIcon;
 
 const GEOJSON_URL = 'https://gist.githubusercontent.com/MichaelVerdegaal/a5f68cc0695ce4cf721cff4875696ffc/raw/countries_lowres.geo.json';
+
+const CONTINENT_CENTERS = {
+    'North America': [40, -100],
+    'Europe': [50, 20],
+    'Asia': [35, 100],
+    'South America': [-15, -60],
+    'Africa': [0, 20],
+    'Oceania': [-25, 135],
+    'Antarctica': [-80, 0]
+};
 
 const TILE_URLS = {
     dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
@@ -81,6 +94,14 @@ const Map = React.memo(({
     const [geoData, setGeoData] = useState(null);
     const [showFlightAnimation, setShowFlightAnimation] = useState(false);
     const [weatherData, setWeatherData] = useState({});
+    const [showGlobe, setShowGlobe] = useState(false);
+    const [showTimeLapse, setShowTimeLapse] = useState(false);
+    const [showDistanceRings, setShowDistanceRings] = useState(false);
+    const [currentTimelineDate, setCurrentTimelineDate] = useState(timelineDate || new Date().toISOString());
+
+    useEffect(() => {
+        setCurrentTimelineDate(timelineDate);
+    }, [timelineDate]);
 
     useEffect(() => {
         fetch(GEOJSON_URL)
@@ -124,12 +145,26 @@ const Map = React.memo(({
 
     // 2. Filter cities and paths based on timeline - VERY FAST
     const activeCities = useMemo(() =>
-        visitedCities.filter(c => c.date <= (timelineDate || new Date().toISOString())),
-        [visitedCities, timelineDate]);
+        visitedCities.filter(c => c.date <= (currentTimelineDate || new Date().toISOString())),
+        [visitedCities, currentTimelineDate]);
 
     const activePaths = useMemo(() =>
-        allPaths.filter(p => p.toDate <= (timelineDate || new Date().toISOString())),
-        [allPaths, timelineDate]);
+        allPaths.filter(p => p.toDate <= (currentTimelineDate || new Date().toISOString())),
+        [allPaths, currentTimelineDate]);
+
+    // Continent heatmap data
+    const continentHeatmap = useMemo(() => {
+        const counts = {};
+        activeCities.forEach(city => {
+            const cont = Object.keys(CONTINENTS).find(k => CONTINENTS[k].includes(city.country));
+            if (cont) counts[cont] = (counts[cont] || 0) + 1;
+        });
+        return Object.entries(counts).map(([name, count]) => ({
+            name,
+            count,
+            center: CONTINENT_CENTERS[name]
+        }));
+    }, [activeCities]);
 
     // Custom icons memoized
     const getEmojiIcon = useCallback((cityEmoji) => L.divIcon({
@@ -198,8 +233,28 @@ const Map = React.memo(({
             >
                 <TileLayer url={TILE_URLS[efficientStyle]} />
 
-                <TimelineFlyTo activeCities={activeCities} timelineDate={timelineDate} />
+                <TimelineFlyTo activeCities={activeCities} timelineDate={currentTimelineDate} />
                 <FlyToListener city={selectedCity} />
+
+                {showDistanceRings && (settings?.homeCity || activeCities.length > 0) && (
+                    <DistanceRings center={settings?.homeCity || { lat: activeCities[0].lat, lng: activeCities[0].lng }} />
+                )}
+
+                {settings?.showHeatmap && continentHeatmap.map(ch => (
+                    <CircleMarker
+                        key={`cont-heat-${ch.name}`}
+                        center={ch.center}
+                        radius={20 + (ch.count * 5)}
+                        pathOptions={{
+                            fillColor: '#fbbf24',
+                            fillOpacity: 0.15,
+                            color: '#fbbf24',
+                            weight: 1,
+                            opacity: 0.3
+                        }}
+                        interactive={false}
+                    />
+                ))}
 
                 {geoData && (
                     <GeoJSON
@@ -299,8 +354,17 @@ const Map = React.memo(({
                 <div className="border-t border-white/10 pt-2 text-slate-500 normal-case font-medium">Shift+Click = Bucket • Ctrl+Click = Info</div>
             </div>
 
-            {/* Flight replay & theme toggle buttons */}
+            {/* Flight replay & theme toggle buttons & new controls */}
             <div className="absolute bottom-6 right-6 z-[1000] flex flex-col gap-2">
+                <button onClick={() => setShowGlobe(true)} className="glass p-3 rounded-xl text-white hover:bg-white/10 transition-all shadow-lg border border-white/10" title="3D Globe View">
+                    <span className="text-sm">🌍</span>
+                </button>
+                <button onClick={() => setShowTimeLapse(true)} className="glass p-3 rounded-xl text-white hover:bg-white/10 transition-all shadow-lg border border-white/10" title="Time-Lapse Replay">
+                    <span className="text-sm">⏱️</span>
+                </button>
+                <button onClick={() => setShowDistanceRings(!showDistanceRings)} className={`glass p-3 rounded-xl text-white hover:bg-white/10 transition-all shadow-lg border ${showDistanceRings ? 'border-blue-500 bg-blue-500/20' : 'border-white/10'}`} title="Distance Rings">
+                    <span className="text-sm">⭕</span>
+                </button>
                 {activeCities.length >= 2 && (
                     <button onClick={() => setShowFlightAnimation(!showFlightAnimation)} className="glass p-3 rounded-xl text-white hover:bg-white/10 transition-all shadow-lg border border-white/10" title="Replay Flight Path">
                         <span className="text-sm">✈️</span>
@@ -317,6 +381,18 @@ const Map = React.memo(({
                     </button>
                 )}
             </div>
+
+            {/* Overlays */}
+            {showGlobe && <GlobeView visitedCountries={visitedCountries} onClose={() => setShowGlobe(false)} />}
+
+            {showTimeLapse && (
+                <TimeLapseControls
+                    cities={visitedCities}
+                    currentDate={currentTimelineDate}
+                    onChange={setCurrentTimelineDate}
+                    onClose={() => setShowTimeLapse(false)}
+                />
+            )}
         </div>
     );
 });
